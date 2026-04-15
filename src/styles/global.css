@@ -1,0 +1,20 @@
+/* ══ TEMAS ══ */
+[data-theme="dark"]{
+  --bg:#0b0f1a;--surf:#141922;--surf2:#1c2333;--brd:#2a3347;
+  --txt:#eaf0fb;--mut:#6b7a99;--inv:#000;
+}
+[data-theme="light"]{
+  --bg:#f0f4f8;--surf:#ffffff;--surf2:#e8eef5;--brd:#d0dae8;
+  --txt:#1a2332;--mut:#6b7a99;--inv:#fff;
+}
+:root{
+  --pri:#00c853;--pri-dim:rgba(0,200,83,.12);
+  --sec:#ffd600;--sec-dim:rgba(255,214,0,.15);
+  --acc:#58a6ff;--err:#f85149;--ok:#3fb950;--warn:#d29922;
+  --sw:234px;--r:10px;--sh:0 8px 32px rgba(0,0,0,.35);
+  --app-font: 'Nunito', sans-serif;
+  transition:background .2s,color .2s;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:var(--app-font);background:var(--bg);color:var(--txt);display:flex;min-height:100vh;font-size:14px;line-height:1.5;overflow-x:hidden;transition:background .2s,color .2s}

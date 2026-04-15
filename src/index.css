@@ -1,0 +1,9 @@
+@import './styles/interactive.css';
+
+/* Variáveis de tema estão em global.css - usar data-theme="dark" ou data-theme="light" */
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--txt);
+}
