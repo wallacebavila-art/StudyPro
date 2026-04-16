@@ -7,7 +7,7 @@ const Revisao = () => {
   const [filterDisciplina, setFilterDisciplina] = useState('');
 
   // Converter objetos em arrays
-  const questionsList = useMemo(() => Object.values(questions), [questions]);
+  const questionsList = useMemo(() => Object.values(questions || {}), [questions]);
   const simuladosList = useMemo(() => Object.values(simulados || {}), [simulados]);
 
   // Calcular todos os erros dos simulados

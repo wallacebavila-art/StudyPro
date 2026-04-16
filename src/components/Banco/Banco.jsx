@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useStudy } from '../../context/StudyContext';
+import { DISCIPLINAS, getTopicos } from '../../config/editalConfig';
 
 const Banco = () => {
-  const { questions, deleteQuestion, addQuestion, config, setView } = useStudy();
+  const { questions, deleteQuestion, addQuestion, updateQuestion, config, setView } = useStudy();
   const [activeDisciplina, setActiveDisciplina] = useState('');
   const [filters, setFilters] = useState({
     search: '',
@@ -12,7 +13,10 @@ const Banco = () => {
   });
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingQuestionId, setDeletingQuestionId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState(null);
   const [addMode, setAddMode] = useState('manual'); // 'manual' | 'paste'
   const [pasteText, setPasteText] = useState('');
   const [isProcessingPaste, setIsProcessingPaste] = useState(false);
@@ -33,7 +37,7 @@ const Banco = () => {
     fonte: ''
   });
 
-  const questionsList = useMemo(() => Object.values(questions), [questions]);
+  const questionsList = useMemo(() => Object.values(questions || {}), [questions]);
 
   // Questões filtradas por disciplina ativa e filtros adicionais
   const filteredQuestions = useMemo(() => {
@@ -123,6 +127,21 @@ const Banco = () => {
     setShowDeleteConfirm(false);
   };
 
+  const confirmDeleteQuestion = (id) => {
+    setDeletingQuestionId(id);
+  };
+
+  const handleDeleteSingle = async () => {
+    if (deletingQuestionId) {
+      await deleteQuestion(deletingQuestionId);
+      setDeletingQuestionId(null);
+    }
+  };
+
+  const cancelDeleteSingle = () => {
+    setDeletingQuestionId(null);
+  };
+
   const handleAddQuestion = async (e) => {
     e.preventDefault();
     
@@ -157,6 +176,33 @@ const Banco = () => {
       explicacao: '',
       fonte: ''
     });
+  };
+
+  const openEditModal = (question) => {
+    setEditingQuestion({ ...question });
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingQuestion(null);
+  };
+
+  const handleUpdateQuestion = async (e) => {
+    e.preventDefault();
+    if (editingQuestion) {
+      await updateQuestion(editingQuestion.id, editingQuestion);
+      closeEditModal();
+    }
+  };
+
+  const updateEditingAlternativa = (letra, texto) => {
+    setEditingQuestion(prev => ({
+      ...prev,
+      alternativas: prev.alternativas.map(alt => 
+        alt.letra === letra ? { ...alt, texto } : alt
+      )
+    }));
   };
 
   const processPasteWithAI = async () => {
@@ -248,34 +294,62 @@ ${pasteText}`;
   };
 
   return (
-    <div id="view-banco" className="view active">
-      {/* Abas de Disciplinas */}
+    <div id="view-banco" className="view active" style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100vh',
+      overflow: 'hidden',
+      maxWidth: '1200px',
+      margin: '0 auto',
+      width: '100%'
+    }}>
+      {/* Header fixo - Abas de Disciplinas Modernas */}
       <div className="disciplina-tabs" style={{
         display: 'flex',
-        gap: '8px',
-        marginBottom: '20px',
-        paddingBottom: '12px',
-        borderBottom: '1px solid var(--brd)',
+        gap: '4px',
+        marginBottom: '16px',
+        padding: '4px',
+        background: 'var(--surf2)',
+        borderRadius: '12px',
         overflowX: 'auto',
-        flexWrap: 'nowrap'
+        flexWrap: 'nowrap',
+        flexShrink: 0,
+        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)'
       }}>
         <button
           className={`disciplina-tab ${activeDisciplina === '' ? 'active' : ''}`}
           onClick={() => handleDisciplinaChange('')}
           style={{
-            padding: '10px 16px',
-            borderRadius: '8px',
+            padding: '6px 12px',
+            borderRadius: '10px',
             border: 'none',
-            background: activeDisciplina === '' ? 'var(--pri)' : 'var(--surf2)',
-            color: activeDisciplina === '' ? '#000' : 'var(--txt)',
+            background: activeDisciplina === '' ? 'var(--pri)' : 'transparent',
+            color: activeDisciplina === '' ? '#000' : 'var(--mut)',
             cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: 600,
+            fontSize: '11px',
+            fontWeight: activeDisciplina === '' ? 700 : 500,
             whiteSpace: 'nowrap',
-            transition: 'all 0.15s ease'
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: activeDisciplina === '' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
           }}
         >
-          📚 Todas ({questionsList.length})
+          <span>📚</span>
+          <span>Todas</span>
+          <span style={{
+            background: activeDisciplina === '' ? 'rgba(0,0,0,0.15)' : 'var(--surf)',
+            color: activeDisciplina === '' ? '#000' : 'var(--mut)',
+            padding: '1px 6px',
+            borderRadius: '10px',
+            fontSize: '10px',
+            fontWeight: 700,
+            minWidth: '18px',
+            textAlign: 'center'
+          }}>
+            {questionsList.length}
+          </span>
         </button>
         {disciplinas.map(disc => (
           <button
@@ -283,98 +357,128 @@ ${pasteText}`;
             className={`disciplina-tab ${activeDisciplina === disc ? 'active' : ''}`}
             onClick={() => handleDisciplinaChange(disc)}
             style={{
-              padding: '10px 16px',
-              borderRadius: '8px',
+              padding: '6px 12px',
+              borderRadius: '10px',
               border: 'none',
-              background: activeDisciplina === disc ? 'var(--pri)' : 'var(--surf2)',
-              color: activeDisciplina === disc ? '#000' : 'var(--txt)',
+              background: activeDisciplina === disc ? 'var(--pri)' : 'transparent',
+              color: activeDisciplina === disc ? '#000' : 'var(--mut)',
               cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 600,
+              fontSize: '11px',
+              fontWeight: activeDisciplina === disc ? 700 : 500,
               whiteSpace: 'nowrap',
-              transition: 'all 0.15s ease'
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: activeDisciplina === disc ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
             }}
           >
-            {disc} ({disciplinaCounts[disc] || 0})
+            <span>{disc}</span>
+            <span style={{
+              background: activeDisciplina === disc ? 'rgba(0,0,0,0.15)' : 'var(--surf)',
+              color: activeDisciplina === disc ? '#000' : 'var(--mut)',
+              padding: '1px 6px',
+              borderRadius: '10px',
+              fontSize: '10px',
+              fontWeight: 700,
+              minWidth: '18px',
+              textAlign: 'center'
+            }}>
+              {disciplinaCounts[disc] || 0}
+            </span>
           </button>
         ))}
       </div>
 
-      {/* Botão Adicionar + Filtros */}
-      <div className="flex ac jb mb16">
-        <div className="filters" style={{ flex: 1 }}>
+      {/* Área de filtros fixa - Compacta */}
+      <div style={{ flexShrink: 0, background: 'var(--surf)', borderRadius: '8px', padding: '10px 12px', marginBottom: '10px' }}>
+        <div className="flex ac jb" style={{ gap: '10px', flexWrap: 'wrap' }}>
+          {/* Busca */}
           <input
             className="f-inp"
             id="f-search"
             placeholder="🔍 Buscar questão..."
             value={filters.search}
             onChange={(e) => handleFilterChange('search', e.target.value)}
-            style={{ flex: 1, marginBottom: 0 }}
+            style={{ flex: 1, minWidth: '200px', marginBottom: 0 }}
           />
+
+          {/* Filtros em linha */}
+          <div className="flex ac" style={{ gap: '8px', flexWrap: 'wrap' }}>
+            <select
+              className="f-sel"
+              id="f-top"
+              value={filters.topico}
+              onChange={(e) => handleFilterChange('topico', e.target.value)}
+              style={{ marginBottom: 0 }}
+            >
+              <option value="">Todos tópicos</option>
+              {topicos.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              className="f-sel"
+              id="f-dif"
+              value={filters.dificuldade}
+              onChange={(e) => handleFilterChange('dificuldade', e.target.value)}
+              style={{ marginBottom: 0 }}
+            >
+              <option value="">Dificuldade</option>
+              <option value="facil">Fácil</option>
+              <option value="media">Média</option>
+              <option value="dificil">Difícil</option>
+            </select>
+            <button
+              className="btn btn-pri"
+              onClick={() => setShowAddModal(true)}
+              style={{ whiteSpace: 'nowrap', padding: '7px 14px', fontSize: '12px' }}
+            >
+              ➕ Nova
+            </button>
+          </div>
         </div>
-        <button 
-          className="btn btn-pri"
-          onClick={() => setShowAddModal(true)}
-          style={{ whiteSpace: 'nowrap', marginLeft: '12px' }}
-        >
-          ➕ Nova Questão
-        </button>
+
+        {/* Barra de seleção em massa */}
+        <div className="flex ac jb" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}>
+          <div style={{ color: 'var(--mut)', fontSize: '12px' }}>
+            {filteredQuestions.length} questão{filteredQuestions.length !== 1 ? 's' : ''}
+          </div>
+          {filteredQuestions.length > 0 && (
+            <div className="flex ac" style={{ gap: '10px' }}>
+              <label className="flex ac" style={{ cursor: 'pointer', fontSize: '12px', gap: '6px' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0}
+                  onChange={toggleSelectAll}
+                />
+                Todas
+              </label>
+              {selectedIds.size > 0 && (
+                <>
+                  <span style={{ color: 'var(--mut)', fontSize: '12px' }}>
+                    ({selectedIds.size})
+                  </span>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    style={{ padding: '4px 10px', fontSize: '11px' }}
+                  >
+                    🗑️ Deletar
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Filtros secundários */}
-      <div className="filters" style={{ marginBottom: '16px' }}>
-        <select
-          className="f-sel"
-          id="f-top"
-          value={filters.topico}
-          onChange={(e) => handleFilterChange('topico', e.target.value)}
-        >
-          <option value="">Todos tópicos</option>
-          {topicos.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select
-          className="f-sel"
-          id="f-dif"
-          value={filters.dificuldade}
-          onChange={(e) => handleFilterChange('dificuldade', e.target.value)}
-        >
-          <option value="">Dificuldade</option>
-          <option value="facil">Fácil</option>
-          <option value="media">Média</option>
-          <option value="dificil">Difícil</option>
-        </select>
-      </div>
-      <div className="flex ac jb mb8">
-        <div style={{ color: 'var(--mut)', fontSize: '13px' }}>
-          {filteredQuestions.length} questão{filteredQuestions.length !== 1 ? 's' : ''} encontrada{filteredQuestions.length !== 1 ? 's' : ''}
-        </div>
-        {filteredQuestions.length > 0 && (
-          <div className="flex ac gap8">
-            <label className="flex ac gap6" style={{ cursor: 'pointer', fontSize: '13px' }}>
-              <input
-                type="checkbox"
-                checked={selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0}
-                onChange={toggleSelectAll}
-              />
-              Selecionar todas
-            </label>
-            {selectedIds.size > 0 && (
-              <>
-                <span style={{ color: 'var(--mut)', fontSize: '13px' }}>
-                  {selectedIds.size} selecionada{selectedIds.size !== 1 ? 's' : ''}
-                </span>
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={() => setShowDeleteConfirm(true)}
-                >
-                  🗑️ Deletar ({selectedIds.size})
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      <div id="banco-list">
+      {/* Área scrollável - Lista de questões */}
+      <div id="banco-list" style={{
+        flex: 1,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        paddingRight: '8px',
+        paddingLeft: '4px'
+      }}>
         {filteredQuestions.length ? (
           filteredQuestions.map(q => (
             <div key={q.id} className={`q-card ${selectedIds.has(q.id) ? 'selected' : ''}`}>
@@ -397,10 +501,8 @@ ${pasteText}`;
               </div>
               <div className="q-text">{q.enunciado || ''}</div>
               <div className="q-actions">
-                <button className="btn btn-sec btn-sm">👁 Ver</button>
-                <button className="btn btn-ghost btn-sm">✏️ Editar</button>
-                <button className="btn btn-ghost btn-sm">📌 Classificar</button>
-                <button className="btn btn-danger btn-sm">🗑</button>
+                <button className="btn btn-sec btn-sm" onClick={() => openEditModal(q)}>✏️ Editar</button>
+                <button className="btn btn-danger btn-sm" onClick={() => confirmDeleteQuestion(q.id)}>🗑️ Deletar</button>
               </div>
             </div>
           ))
@@ -428,6 +530,29 @@ ${pasteText}`;
                 Cancelar
               </button>
               <button className="btn btn-danger" onClick={handleDeleteSelected}>
+                🗑️ Sim, deletar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmar Deleção Individual */}
+      {deletingQuestionId && (
+        <div className="modal-overlay" onClick={cancelDeleteSingle}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">⚠️ Confirmar Deleção</div>
+            <p style={{ marginBottom: '16px' }}>
+              Tem certeza que deseja deletar esta questão?
+            </p>
+            <p className="note warn" style={{ marginBottom: '16px' }}>
+              Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex gap8 jc-end">
+              <button className="btn btn-sec" onClick={cancelDeleteSingle}>
+                Cancelar
+              </button>
+              <button className="btn btn-danger" onClick={handleDeleteSingle}>
                 🗑️ Sim, deletar
               </button>
             </div>
@@ -514,25 +639,38 @@ ${pasteText}`;
               {/* Disciplina e Tópico */}
               <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
                 <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
-                  <label className="flbl">Disciplina *</label>
-                  <input
-                    className="finp"
-                    type="text"
+                  <label className="flbl">Disciplina * (Edital CNMP)</label>
+                  <select
+                    className="fsel"
                     value={newQuestion.disciplina}
-                    onChange={(e) => setNewQuestion(prev => ({ ...prev, disciplina: e.target.value }))}
-                    placeholder="Ex: Matemática"
+                    onChange={(e) => setNewQuestion(prev => ({ 
+                      ...prev, 
+                      disciplina: e.target.value,
+                      topico: '' // Reset tópico ao mudar disciplina
+                    }))}
                     required
-                  />
+                  >
+                    <option value="">Selecione...</option>
+                    {DISCIPLINAS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
                   <label className="flbl">Tópico</label>
-                  <input
-                    className="finp"
-                    type="text"
+                  <select
+                    className="fsel"
                     value={newQuestion.topico}
                     onChange={(e) => setNewQuestion(prev => ({ ...prev, topico: e.target.value }))}
-                    placeholder="Ex: Álgebra"
-                  />
+                    disabled={!newQuestion.disciplina}
+                  >
+                    <option value="">
+                      {newQuestion.disciplina ? 'Selecione...' : 'Escolha a disciplina primeiro'}
+                    </option>
+                    {getTopicos(newQuestion.disciplina).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -639,6 +777,174 @@ ${pasteText}`;
                   className="btn btn-pri"
                 >
                   💾 Salvar Questão
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Questão */}
+      {showEditModal && editingQuestion && (
+        <div className="modal-overlay" onClick={closeEditModal}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="modal-title">✏️ Editar Questão</div>
+            
+            <form onSubmit={handleUpdateQuestion}>
+              {/* Enunciado */}
+              <div className="fg" style={{ marginBottom: '16px' }}>
+                <label className="flbl">Enunciado *</label>
+                <textarea
+                  className="fta"
+                  rows="4"
+                  value={editingQuestion.enunciado}
+                  onChange={(e) => setEditingQuestion(prev => ({ ...prev, enunciado: e.target.value }))}
+                  placeholder="Digite o enunciado da questão..."
+                  required
+                />
+              </div>
+
+              {/* Disciplina e Tópico */}
+              <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
+                <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
+                  <label className="flbl">Disciplina * (Edital CNMP)</label>
+                  <select
+                    className="fsel"
+                    value={editingQuestion.disciplina}
+                    onChange={(e) => setEditingQuestion(prev => ({ 
+                      ...prev, 
+                      disciplina: e.target.value,
+                      topico: '' // Reset tópico ao mudar disciplina
+                    }))}
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    {DISCIPLINAS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
+                  <label className="flbl">Tópico</label>
+                  <select
+                    className="fsel"
+                    value={editingQuestion.topico}
+                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, topico: e.target.value }))}
+                    disabled={!editingQuestion.disciplina}
+                  >
+                    <option value="">
+                      {editingQuestion.disciplina ? 'Selecione...' : 'Escolha a disciplina primeiro'}
+                    </option>
+                    {getTopicos(editingQuestion.disciplina).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Dificuldade e Resposta Correta */}
+              <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
+                <div className="fg" style={{ flex: 1, minWidth: '150px' }}>
+                  <label className="flbl">Dificuldade</label>
+                  <select
+                    className="fsel"
+                    value={editingQuestion.dificuldade}
+                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, dificuldade: e.target.value }))}
+                  >
+                    <option value="facil">Fácil</option>
+                    <option value="media">Média</option>
+                    <option value="dificil">Difícil</option>
+                  </select>
+                </div>
+                <div className="fg" style={{ flex: 1, minWidth: '150px' }}>
+                  <label className="flbl">Resposta Correta *</label>
+                  <select
+                    className="fsel"
+                    value={editingQuestion.respostaCorreta}
+                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, respostaCorreta: e.target.value }))}
+                    required
+                  >
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                    <option value="D">D</option>
+                    <option value="E">E</option>
+                  </select>
+                </div>
+                <div className="fg" style={{ flex: 2, minWidth: '200px' }}>
+                  <label className="flbl">Fonte</label>
+                  <input
+                    className="finp"
+                    type="text"
+                    value={editingQuestion.fonte}
+                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, fonte: e.target.value }))}
+                    placeholder="Ex: Banca XYZ - 2023"
+                  />
+                </div>
+              </div>
+
+              {/* Alternativas */}
+              <div style={{ marginBottom: '16px' }}>
+                <label className="flbl">Alternativas *</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                  {editingQuestion.alternativas?.map((alt) => (
+                    <div key={alt.letra} className="flex ac gap8">
+                      <span 
+                        style={{ 
+                          width: '28px', 
+                          height: '28px', 
+                          borderRadius: '50%', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          fontWeight: 600,
+                          fontSize: '13px',
+                          background: editingQuestion.respostaCorreta === alt.letra ? 'var(--pri)' : 'var(--surf2)',
+                          color: editingQuestion.respostaCorreta === alt.letra ? '#000' : 'var(--txt)'
+                        }}
+                      >
+                        {alt.letra}
+                      </span>
+                      <input
+                        className="finp"
+                        type="text"
+                        value={alt.texto}
+                        onChange={(e) => updateEditingAlternativa(alt.letra, e.target.value)}
+                        placeholder={`Alternativa ${alt.letra}`}
+                        required={alt.letra === 'A' || alt.letra === 'B'}
+                        style={{ flex: 1 }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Explicação */}
+              <div className="fg" style={{ marginBottom: '20px' }}>
+                <label className="flbl">Explicação / Gabarito Comentado</label>
+                <textarea
+                  className="fta"
+                  rows="3"
+                  value={editingQuestion.explicacao}
+                  onChange={(e) => setEditingQuestion(prev => ({ ...prev, explicacao: e.target.value }))}
+                  placeholder="Explique a resposta correta (opcional)..."
+                />
+              </div>
+
+              {/* Botões */}
+              <div className="flex gap12 jc-end">
+                <button 
+                  type="button" 
+                  className="btn btn-sec"
+                  onClick={closeEditModal}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-pri"
+                >
+                  💾 Salvar Alterações
                 </button>
               </div>
             </form>

@@ -6,8 +6,8 @@ const Dashboard = () => {
   const { questions, simulados } = useStudy();
 
   const stats = useMemo(() => {
-    const qs = Object.values(questions);
-    const sims = Object.values(simulados);
+    const qs = Object.values(questions || {});
+    const sims = Object.values(simulados || {});
 
     const totalQuestions = qs.length;
     const totalSimulados = sims.length;
@@ -17,9 +17,10 @@ const Dashboard = () => {
       : 0;
 
     const errors = new Set();
+    const safeQuestions = questions || {};
     sims.forEach(s =>
       Object.keys(s.respostas || {}).forEach(id => {
-        if (s.respostas[id] !== (questions[id]?.gabarito)) errors.add(id);
+        if (s.respostas[id] !== (safeQuestions[id]?.gabarito)) errors.add(id);
       })
     );
     const totalErrors = errors.size;
@@ -29,7 +30,7 @@ const Dashboard = () => {
 
   const chartData = useMemo(() => {
     const byDisc = {};
-    Object.values(questions).forEach(q => {
+    Object.values(questions || {}).forEach(q => {
       if (q.disciplina) {
         byDisc[q.disciplina] = (byDisc[q.disciplina] || 0) + 1;
       }
@@ -38,16 +39,16 @@ const Dashboard = () => {
   }, [questions]);
 
   const recentSims = useMemo(() => {
-    return Object.values(simulados)
+    return Object.values(simulados || {})
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 5);
   }, [simulados]);
 
   const weakTopics = useMemo(() => {
     const topicErrors = {};
-    Object.values(simulados).forEach(s => {
+    Object.values(simulados || {}).forEach(s => {
       Object.keys(s.respostas || {}).forEach(id => {
-        const q = questions[id];
+        const q = (questions || {})[id];
         if (q && s.respostas[id] !== q.gabarito) {
           const key = q.topico || q.disciplina;
           topicErrors[key] = (topicErrors[key] || 0) + 1;

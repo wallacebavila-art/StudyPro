@@ -2,13 +2,17 @@ import React, { useState } from 'react';
 import { useStudy } from '../../context/StudyContext';
 
 const Sidebar = () => {
-  const { questions, simulados, currentView, setView, isOnline } = useStudy();
+  const { questions, simulados, currentView, setView, isOnline, isLoading } = useStudy();
   const [isOpen, setIsOpen] = useState(false);
 
-  const totalQuestions = Object.keys(questions).length;
-  const totalSimulados = Object.keys(simulados).length;
-  const errorsCount = Object.values(questions).filter(q =>
-    Object.values(simulados).some(s => s.respostas && s.respostas[q.id] !== q.gabarito)
+  // Proteção contra undefined durante loading
+  const safeQuestions = questions || {};
+  const safeSimulados = simulados || {};
+
+  const totalQuestions = Object.keys(safeQuestions).length;
+  const totalSimulados = Object.keys(safeSimulados).length;
+  const errorsCount = Object.values(safeQuestions).filter(q =>
+    Object.values(safeSimulados).some(s => s.respostas && s.respostas[q.id] !== q.gabarito)
   ).length;
 
   const navItems = [

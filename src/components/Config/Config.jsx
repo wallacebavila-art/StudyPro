@@ -17,26 +17,33 @@ const FONTS = [
 const Config = () => {
   const { config, updateConfig, isOnline } = useStudy();
   const [apiKey, setApiKey] = useState(config?.geminiKey || '');
-  const [status, setStatus] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
   const [selectedFont, setSelectedFont] = useState(() => {
     return localStorage.getItem('studypro_font') || 'Nunito';
   });
+
+  useEffect(() => {
+    if (config?.geminiKey !== undefined) {
+      setApiKey(config.geminiKey);
+    }
+  }, [config]);
+
+  const handleSaveApiKey = async () => {
+    try {
+      await updateConfig({ ...config, geminiKey: apiKey });
+      setSaveStatus('✅ API Key salva!');
+      setTimeout(() => setSaveStatus(''), 2500);
+    } catch (error) {
+      setSaveStatus('❌ Erro ao salvar');
+    }
+  };
 
   useEffect(() => {
     const font = FONTS.find(f => f.name === selectedFont) || FONTS[0];
     document.documentElement.style.setProperty('--app-font', font.family);
     document.body.style.fontFamily = font.family;
   }, [selectedFont]);
-
-  const handleSave = async () => {
-    try {
-      await updateConfig({ ...config, geminiKey: apiKey });
-      setStatus('✅ Salvo!');
-      setTimeout(() => setStatus(''), 2500);
-    } catch (error) {
-      setStatus('❌ Erro: ' + error.message);
-    }
-  };
 
   const setTheme = (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -55,25 +62,36 @@ const Config = () => {
 
   return (
     <div style={{ maxWidth: '600px' }}>
+      {/* API Key Gemini */}
       <div className="card mb16">
         <div className="card-title">🔑 API Key — Gemini</div>
         <div className="note warn mb16">
-          ⚠️ <span>Necessária para PDF e IA. <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{color:'var(--acc)'}}>Obter chave gratuita →</a></span>
+          ⚠️ Necessária para extrair questões de PDF. 
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{color:'var(--acc)'}}>Obter chave gratuita →</a>
         </div>
         <div className="fg">
           <label className="flbl">Chave</label>
-          <input
-            className="finp"
-            type="password"
-            id="api-key-inp"
-            placeholder="AIza..."
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-          />
+          <div className="flex ac gap8">
+            <input
+              className="finp"
+              type={showApiKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="AIza..."
+              style={{ flex: 1 }}
+            />
+            <button
+              className="btn btn-sec"
+              onClick={() => setShowApiKey(!showApiKey)}
+              style={{ padding: '8px 12px' }}
+            >
+              {showApiKey ? '🙈' : '👁️'}
+            </button>
+          </div>
         </div>
-        <div className="flex ac gap12">
-          <button className="btn btn-pri" onClick={handleSave}>💾 Salvar</button>
-          <span id="cfg-status" style={{ fontSize: '13px' }}>{status}</span>
+        <div className="flex ac gap12 mt16">
+          <button className="btn btn-pri" onClick={handleSaveApiKey}>💾 Salvar</button>
+          <span style={{ fontSize: '13px' }}>{saveStatus}</span>
         </div>
       </div>
 

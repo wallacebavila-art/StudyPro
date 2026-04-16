@@ -4,7 +4,7 @@ import { useStudy } from '../../context/StudyContext';
 const Desempenho = () => {
   const { questions, simulados } = useStudy();
 
-  const questionsList = useMemo(() => Object.values(questions), [questions]);
+  const questionsList = useMemo(() => Object.values(questions || {}), [questions]);
   const simuladosList = useMemo(() => {
     const list = Object.values(simulados || {});
     return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));

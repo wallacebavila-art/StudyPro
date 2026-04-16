@@ -18,7 +18,7 @@ const Simulado = () => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [timer, setTimer] = useState(null);
 
-  const questionsList = Object.values(questions);
+  const questionsList = Object.values(questions || {});
 
   const disciplinas = [...new Set(questionsList.map(q => q.disciplina).filter(Boolean))].sort();
 
