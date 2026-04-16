@@ -88,8 +88,12 @@
 
 /* ── FILTROS ── */
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center}
-.f-sel{background:var(--surf);border:1px solid var(--brd);color:var(--txt);padding:7px 12px;border-radius:8px;font-family:'Nunito';font-size:13px;cursor:pointer;outline:none;transition:background .2s}
-.f-sel:focus{border-color:var(--pri)}
+
+/* ── SELECTS PADRONIZADOS (Estilo Banco de Questões) ── */
+.f-sel, select{background:var(--surf);border:1px solid var(--brd);color:var(--txt);padding:7px 12px;border-radius:8px;font-family:'Nunito';font-size:13px;cursor:pointer;outline:none;transition:all .2s ease;min-height:36px}
+.f-sel:hover, select:hover{border-color:var(--pri)}
+.f-sel:focus, select:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(74,222,128,0.1)}
+.f-sel option, select option{background:var(--surf);color:var(--txt);padding:8px}
 .f-inp{background:var(--surf);border:1px solid var(--brd);color:var(--txt);padding:7px 12px;border-radius:8px;font-family:'Nunito';font-size:13px;outline:none;flex:1;min-width:160px;transition:background .2s}
 .f-inp:focus{border-color:var(--pri)}.f-inp::placeholder{color:var(--mut)}
 
