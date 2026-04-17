@@ -57,11 +57,15 @@ export const geminiService = {
       throw new Error('Configure a API Key do Gemini em Configurações');
     }
 
-    const b64 = await fileToBase64(file);
-    
-    const prompt = `Você é um extrator especializado em questões de concurso público brasileiro no formato GRAN Questões.
+    console.log('🔷 [GEMINI] Iniciando extração de PDF...');
+    console.log('📄 Arquivo:', file.name, `(${(file.size / 1024).toFixed(1)} KB)`);
 
-EDITAL DE REFERÊNCIA - ANALISTA DE SEGURANÇA DA INFORMAÇÃO CNMP/2025:
+    const b64 = await fileToBase64(file);
+    console.log('📦 Base64 gerado:', b64.substring(0, 50) + '... (' + b64.length + ' chars)');
+    
+    const prompt = `Você é um extrator especializado em questões de concurso público brasileiro no formato GRAN Cursos Questões. Focado na Banca FGV e na metodologia de cobrança das questões em concursos.
+
+EDITAL DE REFERÊNCIA - ANALISTA DE SEGURANÇA DA INFORMAÇÃO:
 Você DEVE classificar cada questão usando EXATAMENTE uma das disciplinas do edital abaixo.
 
 DISCIPLINAS DO EDITAL (use EXATAMENTE estes nomes):
@@ -93,14 +97,14 @@ INSTRUÇÕES CRÍTICAS:
 3. NÃO pare após algumas questões - continue até o final
 4. Capture o enunciado COMPLETO (todos os parágrafos)
 5. Capture todas as 5 alternativas (a, b, c, d, e)
-6. CLASSIFIQUE CORRETAMENTE usando apenas as 12 disciplinas do EDITAL CNMP acima
+6. CLASSIFIQUE CORRETAMENTE usando apenas as 12 disciplinas do EDITAL acima
 
 Para cada questão retorne um objeto JSON com:
 - "enunciado": texto completo do enunciado (todos os parágrafos juntos)
 - "alternativas": array [{"letra":"A","texto":"..."},{"letra":"B","texto":"..."},...] — LETRAS MAIÚSCULAS
 - "gabarito": "" (deixar vazio, não há gabarito visível)
 - "comentario": ""
-- "disciplina": UMA das 12 disciplinas do EDITAL CNMP (ex: "Segurança da Informação e Privacidade")
+- "disciplina": UMA das 12 disciplinas do EDITAL (ex: "Segurança da Informação e Privacidade")
 - "topico": seja específico baseado no conteúdo (ex: "LGPD", "OWASP Top 10", "Firewall")
 - "dificuldade": "media" (padrão)
 - "fonte": extraia de "Fonte:" (ex: "EDUCA 2023 / Prefeitura de Pilões - PB")
@@ -114,27 +118,42 @@ IMPORTANTE:
 
 Retorne SOMENTE o array JSON. Comece com [ e termine com ].`;
 
+    const requestBody = {
+      contents: [{ parts: [{ inline_data: { mime_type: 'application/pdf', data: b64 } }, { text: prompt }] }],
+      generationConfig: { 
+        temperature: 0.1, 
+        maxOutputTokens: 65536,
+        topP: 0.95,
+        topK: 40
+      }
+    };
+
+    console.log('📤 [GEMINI] Enviando requisição...');
+    console.log('🔗 URL:', API_URL.replace(apiKey, '***KEY***'));
+    console.log('📝 Prompt (primeiros 200 chars):', prompt.substring(0, 200) + '...');
+    console.log('⚙️ Config:', JSON.stringify(requestBody.generationConfig));
+
     const resp = await fetch(`${API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ inline_data: { mime_type: 'application/pdf', data: b64 } }, { text: prompt }] }],
-        generationConfig: { 
-          temperature: 0.1, 
-          maxOutputTokens: 65536,  // Aumentado para suportar PDFs grandes com muitas questões
-          topP: 0.95,
-          topK: 40
-        }
-      })
+      body: JSON.stringify(requestBody)
     });
+
+    console.log('📥 [GEMINI] Resposta HTTP:', resp.status, resp.statusText);
 
     if (!resp.ok) {
       const e = await resp.json().catch(() => ({}));
+      console.error('❌ [GEMINI] Erro na resposta:', e);
       throw new Error(e?.error?.message || `Erro HTTP ${resp.status}`);
     }
 
     const data = await resp.json();
+    console.log('📦 [GEMINI] Dados recebidos:', JSON.stringify(data, null, 2).substring(0, 500) + '...');
+    
     const rawText = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+    
+    console.log('📝 [GEMINI] Texto bruto (primeiros 300 chars):', rawText.substring(0, 300) + '...');
+    console.log('📏 [GEMINI] Tamanho total da resposta:', rawText.length, 'caracteres');
     
     if (!rawText) throw new Error('Gemini retornou resposta vazia.');
 
@@ -187,23 +206,40 @@ Retorne SOMENTE o array JSON. Comece com [ e termine com ].`;
       throw new Error('Configure a API Key do Gemini em Configurações');
     }
 
+    console.log('🔷 [GEMINI] callGemini - Iniciando...');
+    console.log('📝 Prompt:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
+    console.log('⚙️ maxTokens:', maxTokens);
+
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens }
+    };
+
+    console.log('📤 [GEMINI] Enviando requisição...');
+    console.log('🔗 URL:', API_URL.replace(apiKey, '***KEY***'));
+
     const resp = await fetch(`${API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens }
-      })
+      body: JSON.stringify(requestBody)
     });
+
+    console.log('📥 [GEMINI] Resposta HTTP:', resp.status, resp.statusText);
 
     if (!resp.ok) {
       const e = await resp.json().catch(() => ({}));
+      console.error('❌ [GEMINI] Erro na resposta:', e);
       throw new Error(e?.error?.message || `Erro HTTP ${resp.status}`);
     }
 
     const data = await resp.json();
+    console.log('📦 [GEMINI] Dados recebidos:', JSON.stringify(data, null, 2).substring(0, 300) + '...');
+    
     const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+    console.log('📝 [GEMINI] Texto gerado:', text.substring(0, 150) + (text.length > 150 ? '...' : ''));
+    
     if (!text) throw new Error('Gemini retornou resposta vazia.');
+    console.log('✅ [GEMINI] callGemini - Concluído');
     return text;
   }
 };

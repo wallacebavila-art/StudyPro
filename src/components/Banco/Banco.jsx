@@ -1226,7 +1226,7 @@ ${pasteText}`;
               {/* Disciplina e Tópico */}
               <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
                 <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
-                  <label className="flbl">Disciplina * (Edital CNMP)</label>
+                  <label className="flbl">Disciplina *</label>
                   <select
                     className="fsel"
                     value={newQuestion.disciplina}
@@ -1394,7 +1394,7 @@ ${pasteText}`;
               {/* Disciplina e Tópico */}
               <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
                 <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
-                  <label className="flbl">Disciplina * (Edital CNMP)</label>
+                  <label className="flbl">Disciplina *</label>
                   <select
                     className="fsel"
                     value={editingQuestion.disciplina}

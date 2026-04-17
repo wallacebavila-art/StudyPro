@@ -66,7 +66,7 @@ REGRAS IMPORTANTES:
 4. Enunciados claros e objetivos
 5. Questões originais, não copiadas de provas existentes
 6. Conteúdo técnico preciso e atualizado
-7. Contexto: Concurso CNMP/2025 - Analista de Segurança da Informação
+7. Contexto: Analista de Segurança da Informação
 
 FORMATO DE RESPOSTA (JSON):
 [

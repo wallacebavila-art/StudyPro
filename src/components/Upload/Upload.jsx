@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import { geminiService } from '../../services/geminiService';
+import { pdfApiService } from '../../services/pdfApiService';
 import { EDITAL_ESTRUTURA, DISCIPLINAS, getTopicos } from '../../config/editalConfig';
 
 const Upload = () => {
@@ -11,6 +12,7 @@ const Upload = () => {
   const [status, setStatus] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [metodoExtracao, setMetodoExtracao] = useState('gemini'); // 'gemini' | 'parser'
   const [stats, setStats] = useState({ total: 0, duplicates: 0 });
   const [expanded, setExpanded] = useState({});
   const [progress, setProgress] = useState({ percent: 0, stage: '' });
@@ -26,59 +28,100 @@ const Upload = () => {
         setStatus('❌ Arquivo muito grande. Máximo: 20MB.');
         return;
       }
+      if (file.size > 4 * 1024 * 1024 && metodoExtracao === 'parser') {
+        setStatus('⚠️ Arquivo > 4MB. Troque para método Gemini ou use PDF menor.');
+        setMetodoExtracao('gemini');
+      }
       setSelectedFile(file);
       setStatus(`📄 Arquivo selecionado: ${file.name}`);
     }
   };
 
   const processPDF = async () => {
-    const apiKey = config?.geminiKey;
-    if (!apiKey) {
-      setStatus('❌ Configure a API Key do Gemini em Configurações');
-      return;
-    }
-
     if (!selectedFile) {
       setStatus('❌ Selecione um arquivo PDF primeiro.');
       return;
     }
 
+    // Validar tamanho para parser local
+    if (metodoExtracao === 'parser' && selectedFile.size > 4 * 1024 * 1024) {
+      setStatus('❌ Parser local aceita apenas PDFs até 4MB. Use o método Gemini.');
+      return;
+    }
+
+    // Validar API Key apenas para Gemini
+    if (metodoExtracao === 'gemini') {
+      const apiKey = config?.geminiKey;
+      if (!apiKey) {
+        setStatus('❌ Configure a API Key do Gemini em Configurações');
+        return;
+      }
+    }
+
     setIsProcessing(true);
     setProgress({ percent: 0, stage: 'Preparando...' });
     
-    // Simular progresso durante o processamento
-    const progressStages = [
-      { percent: 5, stage: '📤 Enviando PDF...', delay: 500 },
-      { percent: 15, stage: '📖 Convertendo para análise...', delay: 1000 },
-      { percent: 30, stage: '🔍 Analisando estrutura do documento...', delay: 1500 },
-      { percent: 50, stage: '🤖 Identificando questões...', delay: 2000 },
-      { percent: 70, stage: '📝 Extraindo enunciados...', delay: 2000 },
-      { percent: 85, stage: '✏️ Processando alternativas...', delay: 1500 },
-      { percent: 95, stage: '📋 Organizando dados...', delay: 1000 }
-    ];
-    
-    let stageIndex = 0;
-    const progressInterval = setInterval(() => {
-      if (stageIndex < progressStages.length) {
-        setProgress(progressStages[stageIndex]);
-        stageIndex++;
-      }
-    }, 1200);
+    // Simular progresso apenas para Gemini (parser é mais rápido)
+    let progressInterval = null;
+    if (metodoExtracao === 'gemini') {
+      const progressStages = [
+        { percent: 5, stage: '📤 Enviando PDF...', delay: 500 },
+        { percent: 15, stage: '📖 Convertendo para análise...', delay: 1000 },
+        { percent: 30, stage: '🔍 Analisando estrutura do documento...', delay: 1500 },
+        { percent: 50, stage: '🤖 Identificando questões...', delay: 2000 },
+        { percent: 70, stage: '📝 Extraindo enunciados...', delay: 2000 },
+        { percent: 85, stage: '✏️ Processando alternativas...', delay: 1500 },
+        { percent: 95, stage: '📋 Organizando dados...', delay: 1000 }
+      ];
+      
+      let stageIndex = 0;
+      progressInterval = setInterval(() => {
+        if (stageIndex < progressStages.length) {
+          setProgress(progressStages[stageIndex]);
+          stageIndex++;
+        }
+      }, 1200);
+    }
 
     try {
-      const extractedQuestions = await geminiService.extractQuestionsFromPDF(selectedFile, apiKey);
-      clearInterval(progressInterval);
+      let extractedQuestions = [];
+      let resultadoAPI = null;
+
+      if (metodoExtracao === 'gemini') {
+        // Método Gemini (IA)
+        console.log('🤖 Usando Gemini para extração...');
+        extractedQuestions = await geminiService.extractQuestionsFromPDF(selectedFile, config?.geminiKey);
+      } else {
+        // Método Parser Local (API Vercel)
+        console.log('🔍 Usando Parser Local para extração...');
+        setProgress({ percent: 30, stage: '📤 Enviando para API...' });
+        resultadoAPI = await pdfApiService.extractQuestionsFromPDF(selectedFile);
+        extractedQuestions = resultadoAPI.questoes || [];
+        
+        // Log para debug
+        console.log('📊 Resultado Parser Local:', {
+          total: resultadoAPI.total,
+          arquivo: resultadoAPI.arquivo,
+          paginas: resultadoAPI.paginas
+        });
+        
+        if (extractedQuestions.length > 0) {
+          console.log('📝 Primeira questão:', extractedQuestions[0]);
+        }
+      }
+
+      if (progressInterval) clearInterval(progressInterval);
       setProgress({ percent: 100, stage: '✅ Concluído!' });
       
       if (extractedQuestions.length === 0) {
-        setStatus('⚠️ Nenhuma questão encontrada no PDF.');
+        setStatus(`⚠️ Nenhuma questão encontrada no PDF via ${metodoExtracao === 'gemini' ? 'Gemini' : 'Parser Local'}.`);
         setStats({ total: 0, duplicates: 0 });
       } else {
         setQuestions(extractedQuestions);
-        // Detectar duplicatas (por similaridade de enunciado)
         const dupCount = detectDuplicates(extractedQuestions);
         setStats({ total: extractedQuestions.length, duplicates: dupCount });
-        setStatus(`✅ ${extractedQuestions.length} questões extraídas! ${dupCount > 0 ? `(${dupCount} possíveis duplicatas)` : ''}`);
+        const metodoNome = metodoExtracao === 'gemini' ? 'Gemini' : 'Parser Local';
+        setStatus(`✅ ${extractedQuestions.length} questões extraídas via ${metodoNome}! ${dupCount > 0 ? `(${dupCount} possíveis duplicatas)` : ''}`);
       }
     } catch (err) {
       console.error('Erro ao processar PDF:', err);
@@ -168,7 +211,9 @@ const Upload = () => {
         )}
         
         <div className="note info mb16">
-          💡 Envie um PDF com questões de múltipla escolha. O Gemini 2.5 Flash vai extrair automaticamente.
+          💡 <strong>Dois métodos disponíveis:</strong><br/>
+          • <strong>Gemini IA</strong> - Melhor qualidade, classifica automaticamente, requer API Key<br/>
+          • <strong>Parser Local</strong> - Rápido e gratuito, limite 4MB, sem classificação automática
         </div>
 
         <input
@@ -195,13 +240,44 @@ const Upload = () => {
         </div>
 
         {selectedFile && questions.length === 0 && (
-          <button
-            className="btn btn-pri"
-            onClick={processPDF}
-            disabled={isProcessing}
-          >
-            {isProcessing ? '⏳ Processando...' : '🤖 Extrair Questões'}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Seletor de método */}
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', color: 'var(--mut)', fontWeight: 600 }}>
+                  Método de Extração
+                </label>
+                <select
+                  className="f-sel"
+                  value={metodoExtracao}
+                  onChange={(e) => setMetodoExtracao(e.target.value)}
+                  disabled={isProcessing}
+                  style={{ minWidth: '220px', marginBottom: 0 }}
+                >
+                  <option value="gemini">🤖 Gemini IA (Melhor qualidade)</option>
+                  <option value="parser">🔍 Parser Local (Rápido, até 4MB)</option>
+                </select>
+              </div>
+              
+              <button
+                className="btn btn-pri"
+                onClick={processPDF}
+                disabled={isProcessing}
+                style={{ marginTop: '20px' }}
+              >
+                {isProcessing ? '⏳ Processando...' : `🚀 Extrair via ${metodoExtracao === 'gemini' ? 'Gemini' : 'Parser'}`}
+              </button>
+            </div>
+            
+            {/* Info do método selecionado */}
+            <div className={`note ${metodoExtracao === 'gemini' ? 'info' : 'warn'} mb8`} style={{ fontSize: '12px' }}>
+              {metodoExtracao === 'gemini' ? (
+                <>💡 <strong>Gemini:</strong> Usa IA para extrair e classificar questões. Requer API Key. Funciona com PDFs grandes.</>
+              ) : (
+                <>⚡ <strong>Parser Local:</strong> Extrai apenas texto e alternativas. <strong>Limite: 4MB.</strong> Não classifica disciplinas automaticamente.</>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Barra de progresso */}
@@ -309,7 +385,7 @@ const Upload = () => {
 
                   <div className="grid2 mb12">
                     <div className="fg">
-                      <label className="flbl">Disciplina (Edital CNMP)</label>
+                      <label className="flbl">Disciplina</label>
                       <select
                         className="fsel"
                         value={q.disciplina}

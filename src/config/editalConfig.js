@@ -1,5 +1,4 @@
 // Estrutura do Edital - Analista de Segurança da Informação
-// CNMP/2025
 
 export const EDITAL_ESTRUTURA = {
   'Segurança da Informação e Privacidade': {
@@ -131,13 +130,13 @@ export const EDITAL_ESTRUTURA = {
     ]
   },
   'Legislação e Aspectos Éticos': {
-    descricao: 'Ética Profissional, sigilo profissional. Resolução Conjunta CNJ/CNMP nº 3/2013. Resolução CNMP nº 283/2024. Lei nº 14.133/2021',
+    descricao: 'Ética Profissional, sigilo profissional. Resolução Conjunta nº 3/2013. Lei nº 14.133/2021',
     topicos: [
       'Ética Profissional em TI',
       'Responsabilidade técnica',
       'Sigilo profissional',
-      'Resolução Conjunta CNJ/CNMP nº 3/2013',
-      'Resolução CNMP nº 283/2024 (Contratação de TI)',
+      'Resolução Conjunta nº 3/2013',
+      'Contratação de TI',
       'Lei nº 14.133/2021 (Lei de Licitações e Contratos)'
     ]
   }
@@ -348,10 +347,10 @@ const MAPEAMENTO_TOPICOS = {
   'etica': 'Ética Profissional em TI',
   'responsabilidade': 'Responsabilidade técnica',
   'sigilo': 'Sigilo profissional',
-  'cnmp 3/2013': 'Resolução Conjunta CNJ/CNMP nº 3/2013',
-  'cnj/cnmp': 'Resolução Conjunta CNJ/CNMP nº 3/2013',
-  'cnmp 283': 'Resolução CNMP nº 283/2024 (Contratação de TI)',
-  'contratação de ti': 'Resolução CNMP nº 283/2024 (Contratação de TI)',
+  'resolucao 3/2013': 'Resolução Conjunta nº 3/2013',
+  'cnj': 'Resolução Conjunta nº 3/2013',
+  'contratacao ti': 'Contratação de TI',
+  'contratação de ti': 'Contratação de TI',
   'lei 14.133': 'Lei nº 14.133/2021 (Lei de Licitações e Contratos)',
   'licitações': 'Lei nº 14.133/2021 (Lei de Licitações e Contratos)',
   'contrato': 'Lei nº 14.133/2021 (Lei de Licitações e Contratos)'
@@ -377,7 +376,7 @@ export function normalizarTopico(topico) {
 
 // Função para gerar o texto do prompt do Gemini
 export function gerarPromptEdital() {
-  let prompt = `EDITAL - ANALISTA DE SEGURANÇA DA INFORMAÇÃO CNMP/2025
+  let prompt = `EDITAL - ANALISTA DE SEGURANÇA DA INFORMAÇÃO
 
 DISCIPLINAS E TÓPICOS (use EXATAMENTE estes nomes):
 
@@ -476,7 +475,7 @@ export function encontrarDisciplinaProxima(texto) {
     'documentação': 'Laudos e Documentação Técnica',
     'ética': 'Legislação e Aspectos Éticos',
     'sigilo': 'Legislação e Aspectos Éticos',
-    'resolução cnmp': 'Legislação e Aspectos Éticos',
+    'resolucao': 'Legislação e Aspectos Éticos',
     'resolução cnj': 'Legislação e Aspectos Éticos',
     'lei 14.133': 'Legislação e Aspectos Éticos',
     'licitação': 'Legislação e Aspectos Éticos',
@@ -624,7 +623,7 @@ export function normalizarDisciplina(disciplina) {
     'legislacao': 'Legislação e Aspectos Éticos',
     'ética': 'Legislação e Aspectos Éticos',
     'etica': 'Legislação e Aspectos Éticos',
-    'resolução cnmp': 'Legislação e Aspectos Éticos',
+    'resolucao': 'Legislação e Aspectos Éticos',
     'lei 14.133': 'Legislação e Aspectos Éticos',
     'contrato': 'Legislação e Aspectos Éticos'
   };

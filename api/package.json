@@ -1,0 +1,9 @@
+{
+  "name": "studypro-api",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "pdf-parse": "^1.1.1",
+    "busboy": "^1.6.0"
+  }
+}

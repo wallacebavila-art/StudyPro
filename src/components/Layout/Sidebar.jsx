@@ -16,19 +16,19 @@ const Sidebar = () => {
   ).length;
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'banco', label: 'Banco de Questões', icon: '🗄️', badge: totalQuestions },
-    { id: 'upload', label: 'Upload PDF', icon: '📤' },
-    { id: 'gerador', label: 'Gerador IA', icon: '🤖' },
+    { id: 'dashboard', label: 'Dashboard', icon: '📊', iconColor: '#4ade80' },
+    { id: 'banco', label: 'Banco de Questões', icon: '📚', badge: totalQuestions, iconColor: '#60a5fa' },
+    { id: 'upload', label: 'Upload PDF', icon: '📤', iconColor: '#fbbf24' },
+    { id: 'gerador', label: 'Gerador IA', icon: '✨', iconColor: '#a78bfa' },
     { section: 'Estudar' },
-    { id: 'simulado', label: 'Simulado', icon: '📝' },
-    { id: 'revisao', label: 'Revisão de Erros', icon: '🔁', badge: errorsCount, badgeClass: 'nav-badge' },
-    { id: 'flashcards', label: 'Flashcards', icon: '🃏' },
+    { id: 'simulado', label: 'Simulado', icon: '🎯', iconColor: '#f87171' },
+    { id: 'revisao', label: 'Revisão de Erros', icon: '🔄', badge: errorsCount, badgeClass: 'nav-badge', iconColor: '#fb923c' },
+    { id: 'flashcards', label: 'Flashcards', icon: '🎴', iconColor: '#2dd4bf' },
     { section: 'Análise' },
-    { id: 'desempenho', label: 'Desempenho', icon: '📈' },
-    { id: 'cobertura', label: 'Cobertura', icon: '🗺️' },
+    { id: 'desempenho', label: 'Desempenho', icon: '📈', iconColor: '#34d399' },
+    { id: 'cobertura', label: 'Cobertura', icon: '🗺️', iconColor: '#818cf8' },
     { section: 'Sistema' },
-    { id: 'config', label: 'Configurações', icon: '⚙️' }
+    { id: 'config', label: 'Configurações', icon: '⚙️', iconColor: '#94a3b8' }
   ];
 
   const handleNavClick = (id) => {
@@ -58,7 +58,12 @@ const Sidebar = () => {
                 className={`nav-item ${currentView === item.id ? 'active' : ''}`}
                 onClick={() => handleNavClick(item.id)}
               >
-                <span className="ico">{item.icon}</span>
+                <span 
+                  className="ico"
+                  style={{ color: item.iconColor || 'inherit' }}
+                >
+                  {item.icon}
+                </span>
                 <span>{item.label}</span>
                 {item.badge !== undefined && (
                   <span className={item.badgeClass || 'nav-badge'}>{item.badge}</span>
