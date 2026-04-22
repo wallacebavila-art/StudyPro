@@ -74,8 +74,6 @@
 .bg{background:var(--pri-dim);color:var(--pri)}.by{background:var(--sec-dim);color:var(--sec)}
 .br{background:rgba(248,81,73,.15);color:var(--err)}.bb{background:rgba(88,166,255,.15);color:var(--acc)}
 .bm{background:var(--surf2);color:var(--mut)}.bai{background:rgba(99,102,241,.15);color:#818cf8}
-.dif-facil{background:rgba(63,185,80,.15);color:var(--ok)}.dif-media{background:var(--sec-dim);color:var(--sec)}
-.dif-dificil{background:rgba(248,81,73,.15);color:var(--err)}
 
 /* ── Q CARD ── */
 .q-card{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);padding:16px;margin-bottom:10px;transition:border-color .15s,background .2s}

@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import { DISCIPLINAS, getTopicos, normalizarTopico, normalizarDisciplina } from '../../config/editalConfig';
+import { analisarClassificacaoQuestoes, gerarRelatorioClassificacao } from '../../utils/questionDiagnostics';
+import { formatarData, tempoDecorrido } from '../../utils/dateUtils';
 
 const Banco = () => {
   const { questions, deleteQuestion, addQuestion, updateQuestion, config, setView } = useStudy();
@@ -8,7 +10,6 @@ const Banco = () => {
   const [filters, setFilters] = useState({
     search: '',
     topico: '',
-    dificuldade: '',
     errosOnly: '',
     origem: '' // '' = todas, 'ia' = geradas por IA, 'manual' = cadastradas manualmente
   });
@@ -18,6 +19,8 @@ const Banco = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState(null);
+  const [showDiagnostico, setShowDiagnostico] = useState(false);
+  const [diagnosticoData, setDiagnosticoData] = useState(null);
   const [addMode, setAddMode] = useState('manual'); // 'manual' | 'paste'
   const [pasteText, setPasteText] = useState('');
   const [isProcessingPaste, setIsProcessingPaste] = useState(false);
@@ -25,11 +28,12 @@ const Banco = () => {
   const [duplicataSelecionada, setDuplicataSelecionada] = useState(null);
   const [duplicatasAceitas, setDuplicatasAceitas] = useState(new Set()); // IDs de questões que o usuário aceitou como duplicadas
   const [duplicataComparacao, setDuplicataComparacao] = useState(null); // Duplicata sendo comparada lado a lado
+  const [showVarredura, setShowVarredura] = useState(false);
+  const [varreduraData, setVarreduraData] = useState(null);
   const [newQuestion, setNewQuestion] = useState({
     enunciado: '',
     disciplina: '',
     topico: '',
-    dificuldade: 'media',
     respostaCorreta: 'A',
     alternativas: [
       { letra: 'A', texto: '' },
@@ -65,10 +69,6 @@ const Banco = () => {
       filtered = filtered.filter(q => normalizarTopico(q.topico) === filters.topico);
     }
 
-    if (filters.dificuldade) {
-      filtered = filtered.filter(q => q.dificuldade === filters.dificuldade);
-    }
-
     // Filtro por origem (IA vs Manual)
     if (filters.origem === 'ia') {
       filtered = filtered.filter(q => q.geradoIA === true);
@@ -79,14 +79,10 @@ const Banco = () => {
     return filtered;
   }, [questionsList, activeDisciplina, filters]);
 
-  // Disciplinas na ordem oficial do edital (apenas as que têm questões)
+  // Disciplinas na ordem oficial do edital (todas, mesmo sem questões)
   const disciplinas = useMemo(() => {
-    const disciplinasComQuestoes = new Set(
-      questionsList.map(q => normalizarDisciplina(q.disciplina)).filter(Boolean)
-    );
-    // Retorna na ordem do edital, filtrando apenas as que existem
-    return DISCIPLINAS.filter(d => disciplinasComQuestoes.has(d));
-  }, [questionsList]);
+    return DISCIPLINAS;
+  }, []);
 
   // Contagem de questões por disciplina (normalizadas)
   const disciplinaCounts = useMemo(() => {
@@ -102,23 +98,15 @@ const Banco = () => {
   const questoesIA = useMemo(() => questionsList.filter(q => q.geradoIA).length, [questionsList]);
   const questoesManual = useMemo(() => questionsList.filter(q => !q.geradoIA).length, [questionsList]);
 
-  // Tópicos na ordem oficial do edital (apenas os que têm questões na disciplina ativa)
+  // Tópicos na ordem oficial do edital (todos, mesmo sem questões na disciplina ativa)
   const topicos = useMemo(() => {
-    const discFiltered = activeDisciplina
-      ? questionsList.filter(q => normalizarDisciplina(q.disciplina) === activeDisciplina)
-      : questionsList;
-    // Normaliza e remove duplicatas
-    const topicosNaDisciplina = [...new Set(
-      discFiltered.map(q => normalizarTopico(q.topico)).filter(t => t)
-    )];
-    // Se tem disciplina ativa, retorna na ordem do edital
+    // Se tem disciplina ativa, retorna todos os tópicos oficiais
     if (activeDisciplina) {
-      const topicosOficiais = getTopicos(activeDisciplina);
-      return topicosOficiais.filter(t => topicosNaDisciplina.includes(t));
+      return getTopicos(activeDisciplina);
     }
-    // Se não tem disciplina, retorna todos os tópicos encontrados (ordem alfabética como fallback)
-    return topicosNaDisciplina.sort();
-  }, [questionsList, activeDisciplina]);
+    // Se não tem disciplina, retorna todos os tópicos de todas as disciplinas
+    return DISCIPLINAS.flatMap(d => getTopicos(d));
+  }, [activeDisciplina]);
 
   // Contagem de questões por tópico
   const topicosCounts = useMemo(() => {
@@ -191,17 +179,31 @@ const Banco = () => {
   const handleAddQuestion = async (e) => {
     e.preventDefault();
     
+    const agora = new Date();
     const questionData = {
       id: `q_${Date.now()}`,
       ...newQuestion,
       geradoIA: addMode === 'paste',
-      createdAt: new Date().toISOString()
+      createdAt: agora.toISOString(),
+      updatedAt: agora.toISOString(),
+      historico: [
+        {
+          tipo: addMode === 'paste' ? 'importacao' : 'criacao',
+          dataISO: agora.toISOString(),
+          dataFormatada: formatarData(agora),
+          ano: agora.getFullYear(),
+          mes: agora.getMonth() + 1,
+          dia: agora.getDate(),
+          hora: agora.getHours(),
+          minuto: agora.getMinutes(),
+          detalhes: addMode === 'paste' ? 'Importada via colagem' : 'Criada manualmente'
+        }
+      ]
     };
 
     await addQuestion(questionData);
     closeAddModal();
   };
-
   const closeAddModal = () => {
     setShowAddModal(false);
     setAddMode('manual');
@@ -210,7 +212,6 @@ const Banco = () => {
       enunciado: '',
       disciplina: '',
       topico: '',
-      dificuldade: 'media',
       respostaCorreta: 'A',
       alternativas: [
         { letra: 'A', texto: '' },
@@ -277,7 +278,6 @@ const Banco = () => {
   "respostaCorreta": "letra da alternativa correta (A, B, C, D ou E)",
   "disciplina": "disciplina da questão",
   "topico": "tópico específico",
-  "dificuldade": "facil|media|dificil",
   "explicacao": "explicação da resposta"
 }
 
@@ -307,7 +307,6 @@ ${pasteText}`;
           enunciado: parsed.enunciado || '',
           disciplina: parsed.disciplina || '',
           topico: parsed.topico || '',
-          dificuldade: parsed.dificuldade || 'media',
           respostaCorreta: parsed.respostaCorreta || 'A',
           alternativas: parsed.alternativas || [
             { letra: 'A', texto: '' },
@@ -401,6 +400,59 @@ ${pasteText}`;
     return duplicatas.some(d => d.q1.id === questaoId || d.q2.id === questaoId);
   };
 
+  // Função para executar diagnóstico de classificação
+  const executarDiagnostico = () => {
+    const stats = analisarClassificacaoQuestoes(questions);
+    setDiagnosticoData(stats);
+    setShowDiagnostico(true);
+    console.log('%c📊 DIAGNÓSTICO DE CLASSIFICAÇÃO', 'font-size: 16px; font-weight: bold; color: #4a90d9;');
+    console.log(gerarRelatorioClassificacao(stats));
+  };
+
+  // Função para varredura/relatório completo do banco
+  const varreduraQuestoes = () => {
+    const total = questionsList.length;
+    const porDisciplina = {};
+    const porTopico = {};
+    const porOrigem = { ia: 0, manual: 0 };
+    const semClassificacao = [];
+
+    questionsList.forEach(q => {
+      const disc = normalizarDisciplina(q.disciplina) || 'Sem disciplina';
+      const top = normalizarTopico(q.topico) || 'Sem tópico';
+      
+      // Contar por disciplina
+      porDisciplina[disc] = (porDisciplina[disc] || 0) + 1;
+
+      // Contar por tópico
+      if (!porTopico[disc]) porTopico[disc] = {};
+      porTopico[disc][top] = (porTopico[disc][top] || 0) + 1;
+
+      // Contar por origem
+      if (q.geradoIA) porOrigem.ia++;
+      else porOrigem.manual++;
+
+      // Verificar sem classificação
+      if (!q.disciplina || q.disciplina === 'Geral' || !q.topico) {
+        semClassificacao.push(q);
+      }
+    });
+
+    const relatorio = {
+      total,
+      porDisciplina,
+      porTopico,
+      porOrigem,
+      semClassificacao: semClassificacao.length,
+      questoesSemClassificacao: semClassificacao,
+      disciplinasTotal: Object.keys(porDisciplina).length,
+      topicosTotal: Object.values(porTopico).reduce((acc, topicos) => acc + Object.keys(topicos).length, 0)
+    };
+
+    setVarreduraData(relatorio);
+    setShowVarredura(true);
+  };
+
   // Aceitar uma duplicata (marcar que o usuário aceitou manter ambas)
   const aceitarDuplicata = (q1Id, q2Id) => {
     setDuplicatasAceitas(prev => {
@@ -414,6 +466,17 @@ ${pasteText}`;
   // Verificar se uma duplicata já foi aceita
   const duplicataFoiAceita = (q1Id, q2Id) => {
     return duplicatasAceitas.has(`${q1Id}_${q2Id}`) || duplicatasAceitas.has(`${q2Id}_${q1Id}`);
+  };
+
+  // Determinar origem da questão (Gemini, Parser ou Manual)
+  const getOrigemQuestao = (q) => {
+    if (q.geradoIA) {
+      return { tipo: 'gemini', label: '🤖 Gemini', cor: 'var(--warn)' };
+    }
+    if (q._metodo === 'parser-local') {
+      return { tipo: 'parser', label: '📄 Parser', cor: '#60a5fa' };
+    }
+    return { tipo: 'manual', label: '✏️ Manual', cor: '#4ade80' };
   };
 
   // Stats para o header
@@ -434,9 +497,10 @@ ${pasteText}`;
       padding: '0 24px 24px',
       boxSizing: 'border-box'
     }}>
-      {/* Header Moderno */}
+      {/* Header Moderno - Layout reorganizado */}
       <div style={{ marginBottom: '20px' }}>
-        <div className="flex ac jb" style={{ marginBottom: '12px' }}>
+        {/* Linha 1: Título + Botões de ação */}
+        <div className="flex ac jb" style={{ marginBottom: '16px' }}>
           <div>
             <h1 style={{ 
               fontSize: '22px', 
@@ -463,22 +527,36 @@ ${pasteText}`;
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  padding: '8px 14px',
-                  fontSize: '12px',
+                  padding: '10px 18px',
+                  fontSize: '13px',
                   fontWeight: 600,
-                  borderRadius: '10px',
-                  background: 'var(--warn)',
-                  color: '#000'
+                  borderRadius: '10px'
                 }}
               >
                 <span>⚠️</span>
-                Ver Duplicatas ({duplicatas.length})
+                Ver Duplicatas
               </button>
             )}
             <button
+              className="btn btn-sec"
+              onClick={varreduraQuestoes}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 18px',
+                fontSize: '13px',
+                fontWeight: 600,
+                borderRadius: '10px'
+              }}
+            >
+              <span>📊</span>
+              Varredura
+            </button>
+            <button
               className="btn btn-pri"
               onClick={() => setShowAddModal(true)}
-              style={{ 
+              style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
@@ -494,27 +572,25 @@ ${pasteText}`;
           </div>
         </div>
 
-        {/* Barra de Filtros Unificada - Interativa */}
-        <div style={{
-          background: 'var(--surf)',
-          borderRadius: '12px',
+        {/* Linha 2: Filtros (esquerda) + Abas de origem (direita) */}
+        <div className="flex ac jb" style={{ 
           padding: '12px 16px',
+          background: 'var(--surf1)',
+          borderRadius: '12px',
           border: '1px solid var(--brd)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-          transition: 'all 0.3s ease',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+          flexWrap: 'wrap',
+          gap: '12px'
         }}>
-          {/* Linha 1: Busca + Disciplina */}
+          {/* Filtros à esquerda */}
           <div className="flex ac" style={{ gap: '10px', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: '250px' }}>
+            {/* Busca */}
+            <div style={{ position: 'relative', minWidth: '220px' }}>
               <span style={{ 
                 position: 'absolute',  
-                left: '12px', 
+                left: '10px', 
                 top: '50%', 
                 transform: 'translateY(-50%)',
-                fontSize: '14px'
+                fontSize: '13px'
               }}>🔍</span>
               <input
                 className="f-inp"
@@ -522,23 +598,26 @@ ${pasteText}`;
                 value={filters.search}
                 onChange={(e) => handleFilterChange('search', e.target.value)}
                 style={{ 
-                  paddingLeft: '36px', 
+                  paddingLeft: '32px', 
                   marginBottom: 0,
                   borderRadius: '8px',
-                  fontSize: '13px'
+                  fontSize: '13px',
+                  height: '38px'
                 }}
               />
             </div>
             
+            {/* Disciplina */}
             <select
               className="f-sel"
               value={activeDisciplina}
               onChange={(e) => handleDisciplinaChange(e.target.value)}
               style={{ 
                 marginBottom: 0, 
-                minWidth: '180px',
+                minWidth: '160px',
                 borderRadius: '8px',
-                fontSize: '13px'
+                fontSize: '13px',
+                height: '38px'
               }}
             >
               <option value="">📚 Todas as disciplinas</option>
@@ -549,181 +628,175 @@ ${pasteText}`;
               ))}
             </select>
 
-            {/* Abas de Origem: Todas | Manual | IA */}
-            <div style={{ 
-              display: 'flex', 
-              background: 'var(--bg)', 
-              borderRadius: '8px', 
-              padding: '3px',
-              border: '1px solid var(--brd)'
-            }}>
+            {/* Tópico */}
+            <select
+              className="f-sel"
+              value={filters.topico}
+              onChange={(e) => handleFilterChange('topico', e.target.value)}
+              style={{ 
+                marginBottom: 0, 
+                minWidth: '150px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                height: '38px'
+              }}
+            >
+              <option value="">🏷️ Todos os tópicos</option>
+              {topicos.map(t => (
+                <option key={t} value={t}>
+                  {t} ({topicosCounts[t] || 0})
+                </option>
+              ))}
+            </select>
+            
+            {/* Limpar filtros */}
+            {(activeDisciplina || filters.topico || filters.search) && (
               <button
-                onClick={() => handleFilterChange('origem', '')}
+                onClick={() => {
+                  setActiveDisciplina('');
+                  setFilters({ search: '', topico: '', errosOnly: '', origem: filters.origem });
+                }}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: filters.origem === '' ? 'var(--pri)' : 'transparent',
-                  color: filters.origem === '' ? '#000' : 'var(--txt)',
                   fontSize: '12px',
-                  fontWeight: 600,
+                  color: 'var(--acc)',
+                  background: 'none',
+                  border: 'none',
                   cursor: 'pointer',
-                  whiteSpace: 'nowrap'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0 4px'
                 }}
               >
-                📚 Todas ({stats.total})
+                ✕ Limpar
               </button>
-              <button
-                onClick={() => handleFilterChange('origem', 'manual')}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: filters.origem === 'manual' ? 'var(--acc)' : 'transparent',
-                  color: filters.origem === 'manual' ? '#fff' : 'var(--txt)',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                ✏️ Manual ({questoesManual})
-              </button>
-              <button
-                onClick={() => handleFilterChange('origem', 'ia')}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: filters.origem === 'ia' ? 'var(--warn)' : 'transparent',
-                  color: filters.origem === 'ia' ? '#000' : 'var(--txt)',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                🤖 IA ({questoesIA})
-              </button>
-            </div>
+            )}
           </div>
 
-          {/* Linha 2: Filtros extras + Ações */}
-          <div className="flex ac jb" style={{ 
-            paddingTop: '10px', 
-            borderTop: '1px solid var(--brd)',
-            flexWrap: 'wrap',
-            gap: '10px'
+          {/* Abas de Origem à direita */}
+          <div style={{ 
+            display: 'flex', 
+            background: 'var(--bg)', 
+            borderRadius: '8px', 
+            padding: '3px',
+            border: '1px solid var(--brd)'
           }}>
-            <div className="flex ac" style={{ gap: '8px', flexWrap: 'wrap' }}>
-              <select
-                className="f-sel"
-                value={filters.topico}
-                onChange={(e) => handleFilterChange('topico', e.target.value)}
-                style={{ 
-                  marginBottom: 0, 
-                  fontSize: '12px',
-                  padding: '6px 10px'
-                }}
-              >
-                <option value="">🏷️ Todos os tópicos</option>
-                {topicos.map(t => <option key={t} value={t}>{t} ({topicosCounts[t] || 0})</option>)}
-              </select>
-              
-              <select
-                className="f-sel"
-                value={filters.dificuldade}
-                onChange={(e) => handleFilterChange('dificuldade', e.target.value)}
-                style={{ 
-                  marginBottom: 0, 
-                  fontSize: '12px',
-                  padding: '6px 10px'
-                }}
-              >
-                <option value="">⚡ Qualquer dificuldade</option>
-                <option value="facil">🟢 Fácil</option>
-                <option value="media">🟡 Média</option>
-                <option value="dificil">🔴 Difícil</option>
-              </select>
+            <button
+              onClick={() => handleFilterChange('origem', '')}
+              style={{
+                padding: '7px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                background: filters.origem === '' ? 'var(--pri)' : 'transparent',
+                color: filters.origem === '' ? '#000' : 'var(--txt)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              📚 Todas ({stats.total})
+            </button>
+            <button
+              onClick={() => handleFilterChange('origem', 'manual')}
+              style={{
+                padding: '7px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                background: filters.origem === 'manual' ? 'var(--acc)' : 'transparent',
+                color: filters.origem === 'manual' ? '#fff' : 'var(--txt)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              ✏️ Manual ({questoesManual})
+            </button>
+            <button
+              onClick={() => handleFilterChange('origem', 'ia')}
+              style={{
+                padding: '7px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                background: filters.origem === 'ia' ? 'var(--warn)' : 'transparent',
+                color: filters.origem === 'ia' ? '#000' : 'var(--txt)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              🤖 IA ({questoesIA})
+            </button>
+          </div>
+        </div>
 
-              {activeDisciplina && (
+        {/* Linha 3: Seleção em massa e ações */}
+        <div className="flex ac jb" style={{
+          marginTop: '12px',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}>
+
+          {/* Seleção em massa - Checkbox moderno */}
+          {filteredQuestions.length > 0 && (
+            <div className="flex ac" style={{ gap: '12px' }}>
+              <label 
+                className="flex ac"
+                onClick={toggleSelectAll}
+                style={{ 
+                  cursor: 'pointer', 
+                  fontSize: '12px', 
+                  gap: '10px',
+                  color: selectedIds.size > 0 ? 'var(--pri)' : 'var(--mut)',
+                  fontWeight: selectedIds.size > 0 ? 600 : 500,
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  background: selectedIds.size > 0 ? 'rgba(74, 222, 128, 0.1)' : 'transparent',
+                  border: `1px solid ${selectedIds.size > 0 ? 'var(--pri)' : 'var(--brd)'}`,
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '4px',
+                  border: `2px solid ${selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0 ? 'var(--pri)' : 'var(--brd)'}`,
+                  background: selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0 ? 'var(--pri)' : selectedIds.size > 0 ? 'rgba(74, 222, 128, 0.3)' : 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease'
+                }}>
+                  {(selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0) && (
+                    <span style={{ color: '#000', fontSize: '12px', fontWeight: 'bold' }}>✓</span>
+                  )}
+                  {selectedIds.size > 0 && selectedIds.size < filteredQuestions.length && (
+                    <span style={{ color: 'var(--pri)', fontSize: '10px', fontWeight: 'bold' }}>−</span>
+                  )}
+                </div>
+                {selectedIds.size > 0 ? `${selectedIds.size} selecionadas` : `Selecionar ${filteredQuestions.length}`}
+              </label>
+              {selectedIds.size > 0 && (
                 <button
-                  onClick={() => handleDisciplinaChange('')}
-                  style={{
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  style={{ 
+                    padding: '6px 14px', 
                     fontSize: '11px',
-                    color: 'var(--acc)',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
+                    borderRadius: '20px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px'
                   }}
                 >
-                  ✕ Limpar filtro
+                  <span>🗑️</span>
+                  Deletar
                 </button>
               )}
             </div>
-
-            {/* Seleção em massa - Checkbox moderno */}
-            {filteredQuestions.length > 0 && (
-              <div className="flex ac" style={{ gap: '12px' }}>
-                <label 
-                  className="flex ac"
-                  onClick={toggleSelectAll}
-                  style={{ 
-                    cursor: 'pointer', 
-                    fontSize: '12px', 
-                    gap: '10px',
-                    color: selectedIds.size > 0 ? 'var(--pri)' : 'var(--mut)',
-                    fontWeight: selectedIds.size > 0 ? 600 : 500,
-                    padding: '6px 12px',
-                    borderRadius: '20px',
-                    background: selectedIds.size > 0 ? 'rgba(74, 222, 128, 0.1)' : 'transparent',
-                    border: `1px solid ${selectedIds.size > 0 ? 'var(--pri)' : 'var(--brd)'}`,
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <div style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '4px',
-                    border: `2px solid ${selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0 ? 'var(--pri)' : 'var(--brd)'}`,
-                    background: selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0 ? 'var(--pri)' : selectedIds.size > 0 ? 'rgba(74, 222, 128, 0.3)' : 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'all 0.2s ease'
-                  }}>
-                    {(selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0) && (
-                      <span style={{ color: '#000', fontSize: '12px', fontWeight: 'bold' }}>✓</span>
-                    )}
-                    {selectedIds.size > 0 && selectedIds.size < filteredQuestions.length && (
-                      <span style={{ color: 'var(--pri)', fontSize: '10px', fontWeight: 'bold' }}>−</span>
-                    )}
-                  </div>
-                  {selectedIds.size > 0 ? `${selectedIds.size} selecionadas` : `Selecionar ${filteredQuestions.length}`}
-                </label>
-                {selectedIds.size > 0 && (
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    style={{ 
-                      padding: '6px 14px', 
-                      fontSize: '11px',
-                      borderRadius: '20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <span>🗑️</span>
-                    Deletar
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
@@ -755,10 +828,24 @@ ${pasteText}`;
                 />
                 {activeDisciplina === '' && <span className="badge bb">{normalizarDisciplina(q.disciplina) || '—'}</span>}
                 {q.topico && <span className="badge bm">{normalizarTopico(q.topico)}</span>}
-                <span className={`badge ${q.dificuldade === 'facil' ? 'dif-facil' : q.dificuldade === 'dificil' ? 'dif-dificil' : 'dif-media'}`}>
-                  {q.dificuldade === 'facil' ? 'Fácil' : q.dificuldade === 'dificil' ? 'Difícil' : 'Média'}
-                </span>
-                {q.geradoIA && <span className="badge bai">🤖 IA</span>}
+                {/* Badge de origem da questão */}
+                {(() => {
+                  const origem = getOrigemQuestao(q);
+                  return (
+                    <span 
+                      className="badge" 
+                      style={{ 
+                        background: origem.cor, 
+                        color: origem.tipo === 'gemini' ? '#000' : '#fff',
+                        fontSize: '10px',
+                        fontWeight: 600
+                      }}
+                      title={`Origem: ${origem.tipo}`}
+                    >
+                      {origem.label}
+                    </span>
+                  );
+                })()}
                 {/* Badge de duplicata aceita */}
                 {duplicatas.some(d => 
                   (d.q1.id === q.id || d.q2.id === q.id) && duplicataFoiAceita(d.q1.id, d.q2.id)
@@ -773,6 +860,10 @@ ${pasteText}`;
                 )}
                 <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--mut)', fontFamily: 'JetBrains Mono' }}>
                   {q.fonte || ''}
+                </span>
+                {/* Data de criação */}
+                <span style={{ marginLeft: '8px', fontSize: '10px', color: 'var(--mut)' }} title={formatarData(q.createdAt)}>
+                  📅 {tempoDecorrido(q.createdAt)}
                 </span>
               </div>
               <div className="q-text" style={{
@@ -950,6 +1041,275 @@ ${pasteText}`;
         </div>
       )}
 
+      {/* Modal de Varredura */}
+      {showVarredura && varreduraData && (
+        <div className="modal-overlay" onClick={() => setShowVarredura(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="modal-title">📊 Varredura do Banco</div>
+            
+            {/* Resumo Geral */}
+            <div style={{ 
+              background: 'var(--surf)', 
+              borderRadius: '10px', 
+              padding: '16px',
+              marginBottom: '20px',
+              border: '1px solid var(--brd)'
+            }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>📈 Resumo Geral</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div style={{ textAlign: 'center', padding: '12px', background: 'var(--bg)', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--pri)' }}>{varreduraData.total}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--mut)' }}>Total de Questões</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '12px', background: 'var(--bg)', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--acc)' }}>{varreduraData.disciplinasTotal}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--mut)' }}>Disciplinas</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '12px', background: 'var(--bg)', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--warn)' }}>{varreduraData.topicosTotal}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--mut)' }}>Tópicos</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Por Origem */}
+            <div style={{ 
+              background: 'var(--surf)', 
+              borderRadius: '10px', 
+              padding: '16px',
+              marginBottom: '20px',
+              border: '1px solid var(--brd)'
+            }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>📊 Por Origem</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                <div style={{ padding: '12px', background: 'rgba(74, 222, 128, 0.1)', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(74, 222, 128, 0.3)' }}>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#4ade80' }}>{varreduraData.porOrigem.manual}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--mut)' }}>✏️ Manual</div>
+                </div>
+                <div style={{ padding: '12px', background: 'rgba(250, 204, 21, 0.1)', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(250, 204, 21, 0.3)' }}>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--warn)' }}>{varreduraData.porOrigem.ia}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--mut)' }}>🤖 IA</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Alertas */}
+            {varreduraData.semClassificacao > 0 && (
+              <div style={{ 
+                background: 'rgba(248, 113, 113, 0.1)', 
+                borderRadius: '10px', 
+                padding: '16px',
+                marginBottom: '20px',
+                border: '1px solid rgba(248, 113, 113, 0.3)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, fontSize: '14px', color: '#f87171' }}>⚠️ Problemas Detectados</h3>
+                  <span style={{ 
+                    background: '#f87171', 
+                    color: '#fff', 
+                    padding: '2px 8px', 
+                    borderRadius: '10px', 
+                    fontSize: '12px', 
+                    fontWeight: 600 
+                  }}>
+                    {varreduraData.semClassificacao}
+                  </span>
+                </div>
+                <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: 'var(--mut)' }}>
+                  Questões sem classificação completa:
+                </p>
+                
+                {/* Lista de questões com problemas */}
+                <div style={{ 
+                  maxHeight: '200px', 
+                  overflowY: 'auto', 
+                  border: '1px solid rgba(248, 113, 113, 0.2)', 
+                  borderRadius: '6px',
+                  background: 'var(--surf)'
+                }}>
+                  {varreduraData.questoesSemClassificacao?.map((q, index) => (
+                    <div 
+                      key={q.id}
+                      style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        borderBottom: index < (varreduraData.questoesSemClassificacao?.length || 0) - 1 ? '1px solid var(--brd)' : 'none',
+                        gap: '8px'
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ 
+                          margin: '0 0 4px 0', 
+                          fontSize: '12px', 
+                          fontWeight: 600, 
+                          color: 'var(--txt)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          #{index + 1}: {q.disciplina || '❌ Sem disciplina'} {q.topico || '❌ Sem tópico'}
+                        </p>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: '11px', 
+                          color: 'var(--mut)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          {q.enunciado?.substring(0, 60) || '...'}...
+                        </p>
+                      </div>
+                      <button 
+                        className="btn btn-sec btn-sm"
+                        onClick={() => {
+                          setShowVarredura(false);
+                          openEditModal(q);
+                        }}
+                        style={{ 
+                          padding: '4px 10px', 
+                          fontSize: '11px',
+                          flexShrink: 0
+                        }}
+                      >
+                        ✏️ Editar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                
+                <p style={{ margin: '12px 0 0 0', fontSize: '11px', color: 'var(--mut)' }}>
+                  💡 Clique em "Editar" para corrigir a classificação da questão
+                </p>
+              </div>
+            )}
+
+            {/* Por Disciplina */}
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>📚 Por Disciplina</h3>
+              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                {Object.entries(varreduraData.porDisciplina)
+                  .sort(([,a], [,b]) => b - a)
+                  .map(([disc, count]) => (
+                    <div 
+                      key={disc} 
+                      style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        padding: '10px 12px',
+                        borderBottom: '1px solid var(--brd)',
+                        background: 'var(--surf)',
+                        borderRadius: '6px',
+                        marginBottom: '6px'
+                      }}
+                    >
+                      <span style={{ fontSize: '13px' }}>{disc}</span>
+                      <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--pri)' }}>{count}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="flex gap8 jc-end">
+              <button className="btn btn-sec" onClick={() => setShowVarredura(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Diagnóstico de Classificação */}
+      {showDiagnostico && diagnosticoData && (
+        <div className="modal-overlay" onClick={() => setShowDiagnostico(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="modal-title">📊 Diagnóstico de Classificação</div>
+            <div style={{ padding: '20px' }}>
+              {diagnosticoData.erro ? (
+                <div style={{ color: 'var(--err)', textAlign: 'center', padding: '20px' }}>
+                  {diagnosticoData.erro}
+                </div>
+              ) : (
+                <>
+                  {/* Resumo */}
+                  <div style={{ 
+                    background: 'var(--surf)', 
+                    borderRadius: '10px', 
+                    padding: '16px',
+                    marginBottom: '20px',
+                    border: '1px solid var(--brd)'
+                  }}>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>📈 Resumo Geral</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                      <div>
+                        <strong>Total de questões:</strong> {diagnosticoData.total}
+                      </div>
+                      <div style={{ color: diagnosticoData.semDisciplina > 0 ? 'var(--warn)' : 'var(--pri)' }}>
+                        <strong>Sem disciplina:</strong> {diagnosticoData.semDisciplina} ({((diagnosticoData.semDisciplina/diagnosticoData.total)*100).toFixed(1)}%)
+                      </div>
+                      <div style={{ color: diagnosticoData.semTopico > 0 ? 'var(--warn)' : 'var(--pri)' }}>
+                        <strong>Sem tópico:</strong> {diagnosticoData.semTopico} ({((diagnosticoData.semTopico/diagnosticoData.total)*100).toFixed(1)}%)
+                      </div>
+                      <div style={{ color: diagnosticoData.disciplinaInvalida > 0 ? 'var(--warn)' : 'var(--pri)' }}>
+                        <strong>Disciplina inválida:</strong> {diagnosticoData.disciplinaInvalida} ({((diagnosticoData.disciplinaInvalida/diagnosticoData.total)*100).toFixed(1)}%)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Disciplinas */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>📚 Questões por Disciplina</h3>
+                    {Object.entries(diagnosticoData.porDisciplina || {})
+                      .sort((a, b) => b[1].count - a[1].count)
+                      .filter(([_, data]) => data.count > 0)
+                      .map(([disc, data]) => (
+                        <div key={disc} style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between',
+                          padding: '8px 0',
+                          borderBottom: '1px solid var(--brd)'
+                        }}>
+                          <span>{disc}</span>
+                          <span style={{ fontWeight: 600 }}>{data.count}</span>
+                        </div>
+                      ))}
+                  </div>
+
+                  {/* Questões problemáticas */}
+                  {diagnosticoData.questoesProblematicas?.length > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: 'var(--warn)' }}>🔍 Questões Sem Classificação (Amostra)</h3>
+                      {diagnosticoData.questoesProblematicas.slice(0, 5).map((q, i) => (
+                        <div key={i} style={{ 
+                          padding: '8px', 
+                          marginBottom: '8px',
+                          background: 'rgba(255, 193, 7, 0.1)',
+                          borderRadius: '6px',
+                          borderLeft: '3px solid var(--warn)'
+                        }}>
+                          <div style={{ fontSize: '12px', color: 'var(--mut)' }}>ID: {q.id}</div>
+                          <div style={{ fontSize: '13px', marginTop: '4px' }}>{q.enunciado}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--warn)', marginTop: '4px' }}>
+                            Problema: {q.problema}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex gap8 jc-end" style={{ padding: '0 20px 20px' }}>
+              <button className="btn btn-sec" onClick={() => setShowDiagnostico(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Comparação Lado a Lado */}
       {duplicataComparacao && (
         <div className="modal-overlay" onClick={() => setDuplicataComparacao(null)}>
@@ -1036,7 +1396,6 @@ ${pasteText}`;
                   {duplicataComparacao.q1.topico && (
                     <span>🏷️ {normalizarTopico(duplicataComparacao.q1.topico)}</span>
                   )}
-                  <span>⚡ {duplicataComparacao.q1.dificuldade === 'facil' ? 'Fácil' : duplicataComparacao.q1.dificuldade === 'dificil' ? 'Difícil' : 'Média'}</span>
                 </div>
               </div>
 
@@ -1105,7 +1464,6 @@ ${pasteText}`;
                   {duplicataComparacao.q2.topico && (
                     <span>🏷️ {normalizarTopico(duplicataComparacao.q2.topico)}</span>
                   )}
-                  <span>⚡ {duplicataComparacao.q2.dificuldade === 'facil' ? 'Fácil' : duplicataComparacao.q2.dificuldade === 'dificil' ? 'Difícil' : 'Média'}</span>
                 </div>
               </div>
             </div>
@@ -1261,20 +1619,8 @@ ${pasteText}`;
                 </div>
               </div>
 
-              {/* Dificuldade e Resposta Correta */}
+              {/* Resposta Correta e Fonte */}
               <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
-                <div className="fg" style={{ flex: 1, minWidth: '150px' }}>
-                  <label className="flbl">Dificuldade</label>
-                  <select
-                    className="fsel"
-                    value={newQuestion.dificuldade}
-                    onChange={(e) => setNewQuestion(prev => ({ ...prev, dificuldade: e.target.value }))}
-                  >
-                    <option value="facil">Fácil</option>
-                    <option value="media">Média</option>
-                    <option value="dificil">Difícil</option>
-                  </select>
-                </div>
                 <div className="fg" style={{ flex: 1, minWidth: '150px' }}>
                   <label className="flbl">Resposta Correta *</label>
                   <select
@@ -1429,20 +1775,8 @@ ${pasteText}`;
                 </div>
               </div>
 
-              {/* Dificuldade e Resposta Correta */}
+              {/* Resposta Correta e Fonte */}
               <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
-                <div className="fg" style={{ flex: 1, minWidth: '150px' }}>
-                  <label className="flbl">Dificuldade</label>
-                  <select
-                    className="fsel"
-                    value={editingQuestion.dificuldade}
-                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, dificuldade: e.target.value }))}
-                  >
-                    <option value="facil">Fácil</option>
-                    <option value="media">Média</option>
-                    <option value="dificil">Difícil</option>
-                  </select>
-                </div>
                 <div className="fg" style={{ flex: 1, minWidth: '150px' }}>
                   <label className="flbl">Resposta Correta *</label>
                   <select
@@ -1518,6 +1852,24 @@ ${pasteText}`;
                 />
               </div>
 
+              {/* Histórico da Questão */}
+              {editingQuestion.historico && editingQuestion.historico.length > 0 && (
+                <div className="fg" style={{ marginBottom: '20px', padding: '12px', background: 'var(--bg)', borderRadius: '8px' }}>
+                  <label className="flbl" style={{ fontSize: '11px', color: 'var(--mut)', marginBottom: '8px' }}>📅 Histórico</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {editingQuestion.historico.map((h, i) => (
+                      <div key={i} style={{ fontSize: '11px', color: 'var(--txt)' }}>
+                        <strong style={{ color: h.tipo === 'criacao' ? 'var(--pri)' : 'var(--acc)' }}>
+                          {h.tipo === 'criacao' ? '✨ Criada' : h.tipo === 'importacao' ? '📥 Importada' : '✏️ Editada'}
+                        </strong>
+                        {' '}em {h.dataFormatada || formatarData(h.dataISO)}
+                        {h.detalhes && <span style={{ color: 'var(--mut)', marginLeft: '4px' }}>- {h.detalhes}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Botões */}
               <div className="flex gap12 jc-end">
                 <button 
@@ -1538,6 +1890,7 @@ ${pasteText}`;
           </div>
         </div>
       )}
+
     </div>
   );
 };

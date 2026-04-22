@@ -1,32 +1,17 @@
-import React, { useState } from 'react';
-
+import { useState } from 'react';
 import { useStudy } from '../../context/StudyContext';
-
 import Sidebar from './Sidebar';
-
 import Topbar from './Topbar';
-
 import Dashboard from '../Dashboard/Dashboard';
-
 import Banco from '../Banco/Banco';
-
 import Upload from '../Upload/Upload';
-
 import Gerador from '../Gerador/Gerador';
-
 import Simulado from '../Simulados/Simulado';
-
 import Revisao from '../Revisao/Revisao';
-
 import Flashcards from '../Flashcards/Flashcards';
-
 import Desempenho from '../Desempenho/Desempenho';
-
 import Cobertura from '../Cobertura/Cobertura';
-
 import Config from '../Config/Config';
-
-
 
 const Layout = () => {
 

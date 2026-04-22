@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
+import { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import { firebaseService } from '../services/firebase';
 
 const StudyContext = createContext();

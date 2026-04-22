@@ -5,7 +5,8 @@
  * usando parsing local com regex.
  */
 
-const API_ENDPOINT = '/api/extrair-questoes';
+const PDF_API_URL = import.meta.env.VITE_PDF_API_URL || 'http://localhost:3001/api/pdf';
+import { criarHistorico } from '../utils/dateUtils';
 
 export const pdfApiService = {
   /**
@@ -113,9 +114,11 @@ export const pdfApiService = {
       const topicoExtraido = q.topico || '';
       const fonteExtraida = q.fonte || `PDF - Questão ${q.numero}`;
       
+      const agora = new Date();
       return {
         id: `q_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 5)}`,
-        createdAt: new Date().toISOString(),
+        createdAt: agora.toISOString(),
+        updatedAt: agora.toISOString(),
         enunciado: q.enunciado || '',
         alternativas: alternativasParseadas.length >= 4 
           ? alternativasParseadas 
@@ -129,9 +132,11 @@ export const pdfApiService = {
         explicacao: `Questão ${q.numero} (Código: ${q.codigo}) - Extraída via Parser Local`,
         disciplina: disciplinaExtraida,
         topico: topicoExtraido,
-        dificuldade: 'media',
         fonte: fonteExtraida,
         geradoIA: false,
+        historico: [
+          criarHistorico('importacao', `Questão ${q.numero} (Código: ${q.codigo}) - Extraída via Parser Local`)
+        ],
         // Metadados extras
         _numeroOriginal: q.numero,
         _codigoOriginal: q.codigo,

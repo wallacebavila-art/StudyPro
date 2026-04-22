@@ -1,5 +1,3 @@
-import React from 'react';
-
 const StatsCard = ({ value, label, sub, className = '' }) => {
   return (
     <div className={`stat-card ${className}`}>
@@ -9,5 +7,4 @@ const StatsCard = ({ value, label, sub, className = '' }) => {
     </div>
   );
 };
-
 export default StatsCard;

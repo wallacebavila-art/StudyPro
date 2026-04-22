@@ -151,7 +151,7 @@ export function getTopicos(disciplina) {
 }
 
 // Mapeamento de variações de tópicos para tópicos oficiais do edital
-const MAPEAMENTO_TOPICOS = {
+export const MAPEAMENTO_TOPICOS = {
   // Gestão de Riscos ISO 31000
   'iso 31000': 'Gestão de riscos (ISO 31000)',
   'iso31000': 'Gestão de riscos (ISO 31000)',

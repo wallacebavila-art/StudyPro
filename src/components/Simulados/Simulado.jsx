@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
@@ -7,7 +7,6 @@ const Simulado = () => {
   const [config, setConfig] = useState({
     disciplina: '',
     topico: '',
-    dificuldade: '',
     quantidade: 10,
     tempo: 3,
     modo: 'normal'
@@ -29,7 +28,6 @@ const Simulado = () => {
   const availableQuestions = questionsList.filter(q => {
     if (config.disciplina && q.disciplina !== config.disciplina) return false;
     if (config.topico && q.topico !== config.topico) return false;
-    if (config.dificuldade && q.dificuldade !== config.dificuldade) return false;
     return true;
   });
 
@@ -214,19 +212,6 @@ const Simulado = () => {
             >
               <option value="">Todos os tópicos</option>
               {topicos.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="fg">
-            <label className="flbl">Dificuldade</label>
-            <select
-              className="fsel"
-              value={config.dificuldade}
-              onChange={(e) => setConfig({ ...config, dificuldade: e.target.value })}
-            >
-              <option value="">Todas</option>
-              <option value="facil">Fácil</option>
-              <option value="media">Média</option>
-              <option value="dificil">Difícil</option>
             </select>
           </div>
           <div className="fg">

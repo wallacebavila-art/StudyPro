@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useStudy } from '../../context/StudyContext';
 
 const Cobertura = () => {

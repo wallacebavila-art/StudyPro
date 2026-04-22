@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import { DISCIPLINAS, getTopicos, normalizarDisciplina, normalizarTopico } from '../../config/editalConfig';
 import { geminiService } from '../../services/geminiService';
@@ -8,7 +8,6 @@ const Gerador = () => {
   const questionsList = useMemo(() => Object.values(questions || {}), [questions]);
   const [disciplina, setDisciplina] = useState('');
   const [topico, setTopico] = useState('');
-  const [dificuldade, setDificuldade] = useState('media');
   const [quantidade, setQuantidade] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [questoesGeradas, setQuestoesGeradas] = useState([]);
@@ -48,16 +47,9 @@ const Gerador = () => {
   }, [questionsList, disciplina]);
 
   const gerarPrompt = () => {
-    const dificuldadeTexto = {
-      facil: 'FÁCIL - Conceitos básicos, definições diretas',
-      media: 'MÉDIA - Aplicação prática, análise de cenários',
-      dificil: 'DIFÍCIL - Casos complexos, integração de conceitos'
-    }[dificuldade];
-
     return `Você é um especialista em criar questões de concurso público brasileiro para Analista de Segurança da Informação.
 
 DISCIPLINA: ${disciplina}${topico ? ` - TÓPICO: ${topico}` : ''}
-NÍVEL DE DIFICULDADE: ${dificuldadeTexto}
 
 REGRAS IMPORTANTES:
 1. Crie questões no formato de múltipla escolha (A, B, C, D, E)
@@ -139,7 +131,6 @@ Gere ${quantidade} questão(ões) no formato JSON acima. Retorne APENAS o array 
         explicacao: (q.explicacao || q.comentario || '').trim(),
         disciplina: normalizarDisciplina(disciplina),
         topico: topico ? normalizarTopico(topico) : '',
-        dificuldade: dificuldade,
         fonte: 'Gerado por IA',
         geradoIA: true
       }));
@@ -286,20 +277,6 @@ Gere ${quantidade} questão(ões) no formato JSON acima. Retorne APENAS o array 
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
           <div className="fg">
-            <label className="flbl">Dificuldade</label>
-            <select
-              className="fsel"
-              value={dificuldade}
-              onChange={(e) => setDificuldade(e.target.value)}
-              disabled={isGenerating}
-            >
-              <option value="facil">🟢 Fácil - Conceitos básicos</option>
-              <option value="media">🟡 Média - Aplicação prática</option>
-              <option value="dificil">🔴 Difícil - Casos complexos</option>
-            </select>
-          </div>
-
-          <div className="fg">
             <label className="flbl">Quantidade (1-10)</label>
             <input
               type="number"
@@ -318,7 +295,6 @@ Gere ${quantidade} questão(ões) no formato JSON acima. Retorne APENAS o array 
           <div className="note info" style={{ fontSize: '12px', marginTop: '12px' }}>
             <strong>📋 Contexto:</strong> Questões de <em>{disciplina}</em>
             {topico && <> - Tópico: <em>{topico}</em></>}
-            {' '}com dificuldade <em>{dificuldade === 'facil' ? 'fácil' : dificuldade === 'dificil' ? 'difícil' : 'média'}</em>
           </div>
         )}
 
@@ -396,9 +372,6 @@ Gere ${quantidade} questão(ões) no formato JSON acima. Retorne APENAS o array 
                   </span>
                   <span className="badge bb">{normalizarDisciplina(q.disciplina)}</span>
                   {q.topico && <span className="badge bm">{q.topico}</span>}
-                  <span className={`badge ${q.dificuldade === 'facil' ? 'dif-facil' : q.dificuldade === 'dificil' ? 'dif-dificil' : 'dif-media'}`}>
-                    {q.dificuldade === 'facil' ? 'Fácil' : q.dificuldade === 'dificil' ? 'Difícil' : 'Média'}
-                  </span>
                   <span className="badge bai">🤖 IA</span>
                   {questoesSelecionadas.has(q.id) && (
                     <span className="badge" style={{ background: 'var(--pri)', color: '#000' }}>
@@ -479,7 +452,6 @@ Gere ${quantidade} questão(ões) no formato JSON acima. Retorne APENAS o array 
         <ul style={{ margin: '8px 0', paddingLeft: '20px', fontSize: '13px', color: 'var(--mut)' }}>
           <li>Selecione uma disciplina específica para questões mais focadas</li>
           <li>Escolha um tópico para gerar questões sobre um assunto específico</li>
-          <li>Varie a dificuldade para criar questões diversificadas</li>
           <li>Gere pequenos lotes (3-5) para melhor qualidade</li>
           <li>Revise as questões antes de salvar no banco</li>
         </ul>

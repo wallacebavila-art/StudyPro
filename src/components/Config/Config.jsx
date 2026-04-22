@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useStudy } from '../../context/StudyContext';
 
 const FONTS = [
@@ -16,6 +16,19 @@ const FONTS = [
 
 const Config = () => {
   const { config, updateConfig, isOnline } = useStudy();
+  
+  // Carregar configurações salvas no localStorage na inicialização
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('studyPro_config');
+    if (savedConfig) {
+      try {
+        JSON.parse(savedConfig);
+      } catch (e) {
+        console.error('Erro ao carregar config:', e);
+      }
+    }
+  }, []);
+
   const [apiKey, setApiKey] = useState(config?.geminiKey || '');
   const [showApiKey, setShowApiKey] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
@@ -29,14 +42,10 @@ const Config = () => {
     }
   }, [config]);
 
-  const handleSaveApiKey = async () => {
-    try {
-      await updateConfig({ ...config, geminiKey: apiKey });
-      setSaveStatus('✅ API Key salva!');
-      setTimeout(() => setSaveStatus(''), 2500);
-    } catch (error) {
-      setSaveStatus('❌ Erro ao salvar');
-    }
+  const handleSaveApiKey = () => {
+    localStorage.setItem('gemini_key', apiKey);
+    setSaveStatus('✅ Salvo!');
+    setTimeout(() => setSaveStatus(''), 2000);
   };
 
   useEffect(() => {

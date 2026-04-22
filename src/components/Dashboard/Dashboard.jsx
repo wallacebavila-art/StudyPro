@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import StatsCard from './StatsCard';
 
