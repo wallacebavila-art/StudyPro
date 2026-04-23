@@ -6,6 +6,7 @@ import Dashboard from '../Dashboard/Dashboard';
 import Banco from '../Banco/Banco';
 import Upload from '../Upload/Upload';
 import Gerador from '../Gerador/Gerador';
+import LeisPDF from '../LeisPDF/LeisPDF';
 import Simulado from '../Simulados/Simulado';
 import Revisao from '../Revisao/Revisao';
 import Flashcards from '../Flashcards/Flashcards';
@@ -19,15 +20,11 @@ const Layout = () => {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-
-
   const toggleSidebar = () => {
 
     setSidebarOpen(!sidebarOpen);
 
   };
-
-
 
   if (isLoading) {
 
@@ -46,8 +43,6 @@ const Layout = () => {
     );
 
   }
-
-
 
   const renderView = () => {
 
@@ -68,6 +63,10 @@ const Layout = () => {
       case 'gerador':
 
         return <Gerador />;
+
+      case 'leis-pdf':
+
+        return <LeisPDF />;
 
       case 'simulado':
 

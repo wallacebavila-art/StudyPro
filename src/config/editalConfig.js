@@ -139,11 +139,66 @@ export const EDITAL_ESTRUTURA = {
       'Contratação de TI',
       'Lei nº 14.133/2021 (Lei de Licitações e Contratos)'
     ]
+  },
+  'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO': {
+    descricao: 'Legislação específica do MPES, Lei Orgânica, Constituição Estadual, LGPD, Código de Ética e planejamento estratégico',
+    topicos: [
+      '1. Lei Orgânica do MPES - LC 95/1997 (Título I, Capítulos I e II)',
+      '2. Constituição do ES 1989 (Títulos I e II, Capítulo IV, Seção I)',
+      '3. Lei Estadual 7233/2002 (Plano de carreiras e vencimentos)',
+      '4. Lei 13709/2018 - LGPD',
+      '5. Portaria PGJ 897/2023 (Política de Privacidade MPES)',
+      '6. Código de Ética do MP - Resolução CNMP 261/2023',
+      '7. Portaria 8565/2017 (Estratégia institucional e governança MPES)',
+      '8. Planejamento Estratégico 2024-2032 do MPES',
+      '9. MP brasileiro e a promoção dos ODS da Agenda 2030',
+      '10. Regimento Interno da Estrutura Organizacional do MPES - Resolução 12/2012'
+    ]
   }
 };
 
-// Lista plana de disciplinas para selects
-export const DISCIPLINAS = Object.keys(EDITAL_ESTRUTURA);
+// Estrutura de Módulos
+export const MODULOS = {
+  'Módulo 1': {
+    nome: 'Módulo 1 - Legislação MPES',
+    descricao: 'Legislação específica do Ministério Público do ES',
+    disciplinas: [
+      'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO'
+    ]
+  },
+  'Módulo 2': {
+    nome: 'Módulo 2 - Conhecimentos Técnicos',
+    descricao: 'Segurança da Informação, TI e aspectos gerais',
+    disciplinas: [
+      'Segurança da Informação e Privacidade',
+      'Gestão de Identidades e Acesso (IAM)',
+      'Firewalls e Proteção Perimetral',
+      'Desenvolvimento Seguro (DevSecOps)',
+      'Segurança em Redes e Resposta a Incidentes',
+      'Criptografia e Certificação Digital',
+      'Monitoramento e Observabilidade',
+      'Plano de Continuidade e Recuperação de Desastres',
+      'Gestão da Qualidade e Indicadores de Performance',
+      'Redes de Computadores',
+      'Laudos e Documentação Técnica',
+      'Legislação e Aspectos Éticos'
+    ]
+  }
+};
+
+// Função para obter o módulo de uma disciplina
+export function getModuloDisciplina(disciplina) {
+  if (!disciplina) return null;
+  for (const [moduloNome, modulo] of Object.entries(MODULOS)) {
+    if (modulo.disciplinas.includes(disciplina)) {
+      return moduloNome;
+    }
+  }
+  return null;
+}
+
+// Lista plana de disciplinas para selects (mantém ordem dos módulos)
+export const DISCIPLINAS = Object.values(MODULOS).flatMap(m => m.disciplinas);
 
 // Função para obter tópicos de uma disciplina
 export function getTopicos(disciplina) {
@@ -466,20 +521,31 @@ export function encontrarDisciplinaProxima(texto) {
     'mpls': 'Redes de Computadores',
     'sdwan': 'Redes de Computadores',
     'vlan': 'Redes de Computadores',
-    'topologia': 'Redes de Computadores',
-    'protocolo': 'Redes de Computadores',
     'wpa2': 'Redes de Computadores',
-    'eap': 'Redes de Computadores',
-    'laudo': 'Laudos e Documentação Técnica',
-    'parecer técnico': 'Laudos e Documentação Técnica',
+    
+    // Laudos
+    'laudos': 'Laudos e Documentação Técnica',
     'documentação': 'Laudos e Documentação Técnica',
+    'parecer': 'Laudos e Documentação Técnica',
+    
+    // Legislação
+    'legislação': 'Legislação e Aspectos Éticos',
+    'legislacao': 'Legislação e Aspectos Éticos',
     'ética': 'Legislação e Aspectos Éticos',
-    'sigilo': 'Legislação e Aspectos Éticos',
+    'etica': 'Legislação e Aspectos Éticos',
     'resolucao': 'Legislação e Aspectos Éticos',
     'resolução cnj': 'Legislação e Aspectos Éticos',
     'lei 14.133': 'Legislação e Aspectos Éticos',
     'licitação': 'Legislação e Aspectos Éticos',
-    'contrato administrativo': 'Legislação e Aspectos Éticos'
+    'contrato administrativo': 'Legislação e Aspectos Éticos',
+    
+    // Legislação MPES
+    'mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'ministerio publico es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'legislacao mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'codigo de etica mp': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'lei organica mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'constituicao es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO'
   };
   
   for (const [termo, disciplina] of Object.entries(mapeamentos)) {
@@ -625,7 +691,16 @@ export function normalizarDisciplina(disciplina) {
     'etica': 'Legislação e Aspectos Éticos',
     'resolucao': 'Legislação e Aspectos Éticos',
     'lei 14.133': 'Legislação e Aspectos Éticos',
-    'contrato': 'Legislação e Aspectos Éticos'
+    'contrato': 'Legislação e Aspectos Éticos',
+    
+    // Legislação MPES
+    'mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'ministerio publico': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'ministerio publico es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'legislacao mp': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'lei organica mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'constituicao es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
+    'resolucao cnmp': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO'
   };
   
   // Verifica mapeamento

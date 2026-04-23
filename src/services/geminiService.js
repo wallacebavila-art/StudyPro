@@ -57,12 +57,22 @@ export const geminiService = {
       throw new Error('Configure a API Key do Gemini em Configurações');
     }
 
-    console.log('🔷 [GEMINI] Iniciando extração de PDF...');
+    const startTime = Date.now();
+    console.log('🔷 [GEMINI] ═══════════════════════════════════════════');
+    console.log('🔷 [GEMINI] INICIANDO EXTRAÇÃO DE PDF');
+    console.log('🔷 [GEMINI] ═══════════════════════════════════════════');
+    console.log('📄 Arquivo:', file.name, `(${(file.size / 1024).toFixed(1)} KB)`);
+    console.log('🤖 Modelo: gemini-2.5-flash');
+    console.log('⏱️  Início:', new Date().toLocaleTimeString());
     
     // Converter para base64
-    console.log('📄 Arquivo:', file.name, `(${(file.size / 1024).toFixed(1)} KB)`);
+    console.log('📦 [1/5] Convertendo PDF para base64...');
+    const b64Start = Date.now();
     const b64 = await fileToBase64(file);
-    console.log('📦 Base64 gerado:', b64.substring(0, 100) + '...', `(${b64.length} chars)`);
+    const b64Time = Date.now() - b64Start;
+    console.log('✅ [1/5] Base64 gerado em', b64Time, 'ms');
+    console.log('   Tamanho:', (b64.length / 1024).toFixed(1), 'KB');
+    console.log('   Preview:', b64.substring(0, 100) + '...');
 
     const prompt = `Você é um extrator especializado em questões de concurso público brasileiro no formato GRAN Cursos Questões. Focado na Banca FGV e na metodologia de cobrança das questões em concursos.
 
@@ -241,18 +251,21 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
       ]
     };
 
-    console.log('📤 [GEMINI] Enviando requisição...');
-    console.log('🔗 URL:', API_URL.replace(apiKey, '***KEY***'));
-    console.log('📝 Prompt (primeiros 200 chars):', prompt.substring(0, 200) + '...');
-    console.log('⚙️ Config:', JSON.stringify(requestBody.generationConfig));
-
+    console.log('� [2/5] Enviando requisição para Gemini...');
+    console.log('   URL:', API_URL.replace(apiKey, '***KEY***'));
+    console.log('   Max tokens:', requestBody.generationConfig.maxOutputTokens.toLocaleString());
+    console.log('   Temperature:', requestBody.generationConfig.temperature);
+    
+    const reqStart = Date.now();
     const resp = await fetch(`${API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
     });
+    const reqTime = Date.now() - reqStart;
 
-    console.log('📥 [GEMINI] Resposta HTTP:', resp.status, resp.statusText);
+    console.log('📥 [3/5] Resposta recebida em', reqTime, 'ms');
+    console.log('   Status HTTP:', resp.status, resp.statusText);
 
     if (!resp.ok) {
       const e = await resp.json().catch(() => ({}));
@@ -261,12 +274,20 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
     }
 
     const data = await resp.json();
-    console.log('📦 [GEMINI] Dados recebidos:', JSON.stringify(data, null, 2).substring(0, 500) + '...');
+    console.log('📦 [4/5] Processando resposta do Gemini...');
+    
+    // Verificar metadados da resposta
+    const metadata = data.usageMetadata || {};
+    if (metadata.promptTokenCount) {
+      console.log('   📊 Tokens enviados:', metadata.promptTokenCount.toLocaleString());
+      console.log('   📊 Tokens resposta:', metadata.candidatesTokenCount?.toLocaleString() || 'N/A');
+      console.log('   📊 Total tokens:', metadata.totalTokenCount?.toLocaleString() || 'N/A');
+    }
     
     const rawText = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
     
-    console.log('📝 [GEMINI] Texto bruto (primeiros 300 chars):', rawText.substring(0, 300));
-    console.log('📏 [GEMINI] Tamanho total da resposta:', rawText.length, 'caracteres');
+    console.log('   � Texto bruto:', (rawText.length / 1024).toFixed(1), 'KB');
+    console.log('   👀 Preview:', rawText.substring(0, 200) + '...');
     
     if (!rawText) throw new Error('Gemini retornou resposta vazia.');
 
@@ -287,7 +308,16 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
     }
 
     // Normalizar questões - igual ao HTML
+    console.log('🔧 [5/5] Normalizando questões...');
     const originalCount = questions.length;
+    
+    // Estatísticas por disciplina
+    const disciplinaCount = {};
+    questions.forEach(q => {
+      const disc = q.disciplina || 'Sem classificação';
+      disciplinaCount[disc] = (disciplinaCount[disc] || 0) + 1;
+    });
+    
     questions = questions.filter(q => q.enunciado && q.alternativas?.length).map(q => {
       const agora = new Date();
       return {
@@ -318,7 +348,17 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
       };
     });
 
-    console.log(`✅ ${questions.length} de ${originalCount} questões são válidas após normalização`);
+    const totalTime = Date.now() - startTime;
+    
+    console.log('✅ [5/5] Normalização concluída');
+    console.log('   📊 Estatísticas por disciplina:');
+    Object.entries(disciplinaCount).forEach(([disc, count]) => {
+      console.log(`      • ${disc}: ${count} questões`);
+    });
+    console.log(`   ✅ ${questions.length} de ${originalCount} questões válidas`);
+    console.log('   ⏱️  Tempo total:', (totalTime / 1000).toFixed(1), 's');
+    console.log('🔷 [GEMINI] EXTRAÇÃO CONCLUÍDA');
+    console.log('🔷 [GEMINI] ═══════════════════════════════════════════');
 
     if (questions.length === 0) {
       throw new Error('Nenhuma questão válida após normalização.');
@@ -368,6 +408,331 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
     if (!text) throw new Error('Gemini retornou resposta vazia.');
     console.log('✅ [GEMINI] callGemini - Concluído');
     return text;
+  },
+
+  // Gerar questões estilo FGV a partir de texto
+  async generateFGVQuestionsFromText(textoLei, apiKey, options) {
+    if (!apiKey) {
+      throw new Error('Configure a API Key do Gemini em Configurações');
+    }
+    if (!textoLei || textoLei.trim().length < 50) {
+      throw new Error('Texto da legislação muito curto ou vazio');
+    }
+
+    const startTime = Date.now();
+    console.log('🎯 [GEMINI] ═══════════════════════════════════════════');
+    console.log('🎯 [GEMINI] INICIANDO GERAÇÃO FGV');
+    console.log('🎯 [GEMINI] ═══════════════════════════════════════════');
+    console.log('📄 Modo: Texto colado');
+    console.log('📄 Tamanho do texto:', (textoLei.length / 1024).toFixed(1), 'KB');
+    console.log('� Legislação:', options.legislacao);
+    console.log('🎚️  Dificuldade:', options.dificuldade);
+    console.log('� Quantidade solicitada:', options.quantidade);
+    console.log('📚 Disciplina:', options.disciplina);
+    console.log('⏱️  Início:', new Date().toLocaleTimeString());
+
+    const prompt = this.buildFGVPrompt(options, textoLei);
+    return this.executeFGVGeneration(prompt, apiKey, options, startTime);
+  },
+
+  // Gerar questões estilo FGV a partir de PDF
+  async generateFGVQuestionsFromPDF(file, apiKey, options) {
+    if (!apiKey) {
+      throw new Error('Configure a API Key do Gemini em Configurações');
+    }
+
+    const startTime = Date.now();
+    console.log('🎯 [GEMINI] ═══════════════════════════════════════════');
+    console.log('🎯 [GEMINI] INICIANDO GERAÇÃO FGV');
+    console.log('🎯 [GEMINI] ═══════════════════════════════════════════');
+    console.log('📄 Modo: PDF');
+    console.log('📄 Arquivo:', file.name, `(${(file.size / 1024).toFixed(1)} KB)`);
+    console.log('� Legislação:', options.legislacao);
+    console.log('🎚️  Dificuldade:', options.dificuldade);
+    console.log('🔢 Quantidade solicitada:', options.quantidade);
+    console.log('📚 Disciplina:', options.disciplina);
+    console.log('⏱️  Início:', new Date().toLocaleTimeString());
+
+    console.log('📦 [1/4] Convertendo PDF para base64...');
+    const b64Start = Date.now();
+    const b64 = await fileToBase64(file);
+    const b64Time = Date.now() - b64Start;
+    console.log('✅ [1/4] Base64 gerado em', b64Time, 'ms');
+    console.log('   Tamanho:', (b64.length / 1024).toFixed(1), 'KB');
+
+    const prompt = this.buildFGVPrompt(options, null);
+
+    const requestBody = {
+      contents: [{ 
+        parts: [
+          { inline_data: { mime_type: 'application/pdf', data: b64 } },
+          { text: prompt }
+        ] 
+      }],
+      generationConfig: { 
+        temperature: 0.3, 
+        maxOutputTokens: 8192,
+        topP: 0.95,
+        topK: 40
+      },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+      ]
+    };
+
+    console.log('� [2/4] Enviando requisição para Gemini...');
+    console.log('   Max tokens:', requestBody.generationConfig.maxOutputTokens.toLocaleString());
+    console.log('   Temperature:', requestBody.generationConfig.temperature);
+
+    const reqStart = Date.now();
+    const resp = await fetch(`${API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    const reqTime = Date.now() - reqStart;
+
+    console.log('📥 [3/4] Resposta recebida em', reqTime, 'ms');
+    console.log('   Status HTTP:', resp.status, resp.statusText);
+
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}));
+      console.error('❌ [GEMINI] Erro na resposta:', e);
+      throw new Error(e?.error?.message || `Erro HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    console.log('📦 [4/4] Processando resposta do Gemini...');
+    
+    // Verificar metadados da resposta
+    const metadata = data.usageMetadata || {};
+    if (metadata.promptTokenCount) {
+      console.log('   📊 Tokens enviados:', metadata.promptTokenCount.toLocaleString());
+      console.log('   📊 Tokens resposta:', metadata.candidatesTokenCount?.toLocaleString() || 'N/A');
+      console.log('   📊 Total tokens:', metadata.totalTokenCount?.toLocaleString() || 'N/A');
+    }
+    
+    const rawText = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+    
+    console.log('   � Texto bruto:', (rawText.length / 1024).toFixed(1), 'KB');
+    console.log('   👀 Preview:', rawText.substring(0, 200) + '...');
+    
+    if (!rawText) throw new Error('Gemini retornou resposta vazia.');
+
+    return this.parseFGVResponse(rawText, options, startTime);
+  },
+
+  // Construir o prompt FGV
+  buildFGVPrompt(options, textoLei) {
+    const dificuldadeDesc = {
+      'facil': 'Questões diretas sobre artigos específicos, cobrança literal do texto legal',
+      'media': 'Questões de interpretação, relação entre artigos, casos práticos simples',
+      'dificil': 'Questões complexas com exceções, hipóteses negativas, casos de conflito entre normas'
+    };
+
+    let basePrompt = `Você é um especialista em questões de concurso público da banca FGV (Fundação Getúlio Vargas).
+
+=== BASE NORMATIVA ===
+LEGISLAÇÃO: ${options.legislacao}
+${textoLei ? `\nTEXTO DA LEI:\n${textoLei}\n` : '(texto fornecido via PDF)'}
+=== FIM DA BASE NORMATIVA ===
+
+INSTRUÇÕES CRÍTICAS - ESTILO FGV:
+
+NÍVEL DE DIFICULDADE: ${options.dificuldade.toUpperCase()}
+${dificuldadeDesc[options.dificuldade]}
+
+CARACTERÍSTICAS OBRIGATÓRIAS DAS QUESTÕES FGV:
+
+1. ENUNCIADOS EXTENSOS E NORMATIVOS:
+   - Cite artigos, parágrafos e incisos específicos da legislação
+   - Use linguagem técnica e precisa do direito administrativo
+   - Contextualize com situações da administração pública
+
+2. ALTERNATIVAS "CERRADINHAS" (FGV):
+   - Crie 5 alternativas (A, B, C, D, E) onde TODAS sejam plausíveis
+   - As alternativas devem ter diferenças SUTIS entre si
+   - Evite alternativas obviamente erradas
+   - Use distratores baseados em confusões comuns da legislação
+
+3. TIPOS DE QUESTÕES FGV (variar entre estes estilos):
+
+   a) QUESTÕES COM EXCEÇÕES:
+      - Use "exceto", "salvo se", "desde que", "a menos que"
+      - Exemplo: "É correto afirmar que o servidor pode acumular cargos, EXCETO se:"
+   
+   b) QUESTÕES COM HIPÓTESES NEGATIVAS:
+      - Use "NÃO está correto", "é INCORRETO afirmar", "NÃO se aplica"
+      - Testa se o candidato percebe a inversão lógica
+   
+   c) QUESTÕES DE INTERPRETAÇÃO SISTEMÁTICA:
+      - Relacione artigos diferentes da mesma lei
+      - Mostre conexões entre normas aparentemente isoladas
+   
+   d) CASOS PRÁTICOS REALISTAS:
+      - Crie situações hipotéticas da administração pública
+      - Ex: "Um servidor foi nomeado para cargo em comissão..."
+   
+   e) QUESTÕES DE COMPATIBILIDADE/INCOMPATIBILIDADE:
+      - "É compatível com a lei...", "Pode ocorrer simultaneamente..."
+
+4. GABARITO E EXPLICAÇÃO:
+   - Apenas UMA alternativa deve ser correta
+   - A explicação deve citar artigos específicos da lei
+   - Explique POR QUE as alternativas incorretas estão erradas
+   - Mencione a sutileza que diferencia a correta
+
+DISCIPLINA/TÓPICO DE CLASSIFICAÇÃO: ${options.disciplina}${options.topico ? ` - ${options.topico}` : ''}
+
+FORMATO DE RESPOSTA OBRIGATÓRIO (JSON):
+[
+  {
+    "enunciado": "texto completo do enunciado no estilo FGV, com citações normativas",
+    "alternativas": [
+      {"letra": "A", "texto": "texto da alternativa A (plausível, com sutileza)"},
+      {"letra": "B", "texto": "texto da alternativa B"},
+      {"letra": "C", "texto": "texto da alternativa C"},
+      {"letra": "D", "texto": "texto da alternativa D"},
+      {"letra": "E", "texto": "texto da alternativa E"}
+    ],
+    "respostaCorreta": "A",
+    "explicacao": "Explicação detalhada citando artigos específicos da lei, explicando a sutileza e por que as outras estão erradas"
+  }
+]
+
+REGRAS ADICIONAIS:
+- Gere EXATAMENTE ${options.quantidade} questão(ões)
+- Varie entre os tipos de questões FGV (exceções, negativas, casos práticos, etc.)
+- As questões devem parecer REALMENTE de prova da FGV
+- Use linguagem formal e técnica do direito administrativo
+- Retorne APENAS o array JSON, sem texto antes ou depois
+- NÃO use markdown (\`\`\`json)`;
+
+    return basePrompt;
+  },
+
+  // Executar geração FGV para texto
+  async executeFGVGeneration(prompt, apiKey, options, startTime) {
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { 
+        temperature: 0.3, 
+        maxOutputTokens: 8192,
+        topP: 0.95,
+        topK: 40
+      },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+      ]
+    };
+
+    console.log('� [2/3] Enviando requisição FGV texto...');
+    console.log('   Max tokens:', requestBody.generationConfig.maxOutputTokens.toLocaleString());
+    console.log('   Temperature:', requestBody.generationConfig.temperature);
+
+    const reqStart = Date.now();
+    const resp = await fetch(`${API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    const reqTime = Date.now() - reqStart;
+
+    console.log('📥 [3/3] Resposta recebida em', reqTime, 'ms');
+    console.log('   Status HTTP:', resp.status, resp.statusText);
+
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}));
+      console.error('❌ [GEMINI] Erro na resposta:', e);
+      throw new Error(e?.error?.message || `Erro HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    console.log('📦 Processando resposta do Gemini...');
+    
+    // Verificar metadados da resposta
+    const metadata = data.usageMetadata || {};
+    if (metadata.promptTokenCount) {
+      console.log('   📊 Tokens enviados:', metadata.promptTokenCount.toLocaleString());
+      console.log('   📊 Tokens resposta:', metadata.candidatesTokenCount?.toLocaleString() || 'N/A');
+      console.log('   📊 Total tokens:', metadata.totalTokenCount?.toLocaleString() || 'N/A');
+    }
+    
+    const rawText = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+    
+    console.log('   📄 Texto bruto:', (rawText.length / 1024).toFixed(1), 'KB');
+    console.log('   👀 Preview:', rawText.substring(0, 200) + '...');
+    
+    if (!rawText) throw new Error('Gemini retornou resposta vazia.');
+
+    return this.parseFGVResponse(rawText, options, startTime);
+  },
+
+  // Parse da resposta FGV
+  parseFGVResponse(rawText, options, startTime) {
+    console.log('🔧 Normalizando questões FGV...');
+    
+    let questions;
+    try {
+      questions = tryParseJSON(rawText);
+      console.log('   📊 JSON parseado:', questions.length, 'questões');
+    } catch (e) {
+      console.error('❌ Erro ao fazer parse do JSON FGV:', e);
+      console.error('📝 Texto recebido:', rawText.substring(0, 500));
+      throw new Error('Resposta do Gemini não é um JSON válido. Tente novamente.');
+    }
+
+    if (!Array.isArray(questions)) {
+      throw new Error('Resposta do Gemini não é um array de questões.');
+    }
+
+    // Normalizar questões
+    const originalCount = questions.length;
+    questions = questions.filter(q => q.enunciado && q.alternativas?.length >= 2).map(q => {
+      const agora = new Date();
+      return {
+        id: `fgv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        createdAt: agora.toISOString(),
+        updatedAt: agora.toISOString(),
+        enunciado: (q.enunciado || '').trim(),
+        alternativas: (q.alternativas || []).map(a => ({
+          letra: (a.letra || '').toUpperCase().trim(),
+          texto: (a.texto || '').trim()
+        })).filter(a => a.letra && a.texto),
+        respostaCorreta: (q.respostaCorreta || q.gabarito || 'A').toUpperCase().trim().charAt(0),
+        explicacao: (q.explicacao || q.comentario || '').trim(),
+        disciplina: options.disciplina || '',
+        topico: options.topico || '',
+        dificuldade: ['facil', 'media', 'dificil'].includes(options.dificuldade) ? options.dificuldade : 'media',
+        fonte: `Gerado do ${options.legislacao} - Estilo FGV`,
+        legislacaoBase: options.legislacao,
+        geradoIA: true,
+        estiloFGV: true,
+        historico: [
+          criarHistorico('geracao', `Gerada via Gemini estilo FGV do ${options.legislacao}`)
+        ]
+      };
+    });
+
+    const totalTime = Date.now() - startTime;
+    
+    console.log('✅ Normalização concluída');
+    console.log(`   📊 ${questions.length} de ${originalCount} questões válidas`);
+    console.log('   ⏱️  Tempo total:', (totalTime / 1000).toFixed(1), 's');
+    console.log('🎯 [GEMINI] GERAÇÃO FGV CONCLUÍDA');
+    console.log('🎯 [GEMINI] ═══════════════════════════════════════════');
+
+    if (questions.length === 0) {
+      throw new Error('Nenhuma questão válida gerada no estilo FGV.');
+    }
+
+    return questions;
   }
 };
 

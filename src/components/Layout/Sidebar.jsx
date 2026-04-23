@@ -20,6 +20,7 @@ const Sidebar = () => {
     { id: 'banco', label: 'Banco de Questões', icon: '📚', badge: totalQuestions, iconColor: '#60a5fa' },
     { id: 'upload', label: 'Upload PDF', icon: '📤', iconColor: '#fbbf24' },
     { id: 'gerador', label: 'Gerador IA', icon: '✨', iconColor: '#a78bfa' },
+    { id: 'leis-pdf', label: 'Questões Leis PDF', icon: '📜', iconColor: '#f472b6' },
     { section: 'Estudar' },
     { id: 'simulado', label: 'Simulado', icon: '🎯', iconColor: '#f87171' },
     { id: 'revisao', label: 'Revisão de Erros', icon: '🔄', badge: errorsCount, badgeClass: 'nav-badge', iconColor: '#fb923c' },

@@ -102,15 +102,20 @@ Gere ${quantidade} questão(ões) no formato JSON acima. Retorne APENAS o array 
       // Parse JSON
       let questoes;
       try {
+        // Remover markdown code fences (```json ... ```)
+        let cleanedResponse = response.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+        
         // Tentar extrair JSON da resposta
-        const jsonMatch = response.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          questoes = JSON.parse(jsonMatch[0]);
-        } else {
-          questoes = JSON.parse(response);
-        }
+        const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]/);
+        let jsonText = jsonMatch ? jsonMatch[0] : cleanedResponse;
+        
+        // Remover trailing commas (vírgulas antes de ] ou })
+        jsonText = jsonText.replace(/,\s*([\]\}])/g, '$1');
+        
+        questoes = JSON.parse(jsonText);
       } catch (parseError) {
         console.error('Erro ao parsear JSON:', response);
+        console.error('Detalhes do erro:', parseError);
         throw new Error('Não foi possível interpretar a resposta da IA. Tente novamente.');
       }
 

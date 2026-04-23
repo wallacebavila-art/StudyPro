@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useStudy } from '../../context/StudyContext';
-import { DISCIPLINAS, getTopicos, normalizarTopico, normalizarDisciplina } from '../../config/editalConfig';
+import { DISCIPLINAS, MODULOS, getTopicos, normalizarTopico, normalizarDisciplina } from '../../config/editalConfig';
 import { analisarClassificacaoQuestoes, gerarRelatorioClassificacao } from '../../utils/questionDiagnostics';
 import { formatarData, tempoDecorrido } from '../../utils/dateUtils';
 
 const Banco = () => {
   const { questions, deleteQuestion, addQuestion, updateQuestion, config, setView } = useStudy();
   const [activeDisciplina, setActiveDisciplina] = useState('');
+  const [activeModulo, setActiveModulo] = useState(''); // '' = todos, 'Módulo 1', 'Módulo 2'
   const [filters, setFilters] = useState({
     search: '',
     topico: '',
@@ -30,6 +31,10 @@ const Banco = () => {
   const [duplicataComparacao, setDuplicataComparacao] = useState(null); // Duplicata sendo comparada lado a lado
   const [showVarredura, setShowVarredura] = useState(false);
   const [varreduraData, setVarreduraData] = useState(null);
+  const [showRespostaCorreta, setShowRespostaCorreta] = useState(false);
+  const [showExplicacao, setShowExplicacao] = useState(false);
+  const [showEnunciado, setShowEnunciado] = useState(true);
+  const [showGabarito, setShowGabarito] = useState(false);
   const [newQuestion, setNewQuestion] = useState({
     enunciado: '',
     disciplina: '',
@@ -48,11 +53,17 @@ const Banco = () => {
 
   const questionsList = useMemo(() => Object.values(questions || {}), [questions]);
 
-  // Questões filtradas por disciplina ativa e filtros adicionais
+  // Questões filtradas por disciplina ativa, módulo ativo e filtros adicionais
   const filteredQuestions = useMemo(() => {
     let filtered = questionsList;
 
-    // Filtrar por disciplina ativa (se houver)
+    // Filtrar por módulo ativo (se houver)
+    if (activeModulo && MODULOS[activeModulo]) {
+      const disciplinasDoModulo = MODULOS[activeModulo].disciplinas;
+      filtered = filtered.filter(q => disciplinasDoModulo.includes(normalizarDisciplina(q.disciplina)));
+    }
+
+    // Filtrar por disciplina ativa (se houver) - sobrescreve o filtro de módulo
     if (activeDisciplina) {
       filtered = filtered.filter(q => normalizarDisciplina(q.disciplina) === activeDisciplina);
     }
@@ -77,7 +88,7 @@ const Banco = () => {
     }
 
     return filtered;
-  }, [questionsList, activeDisciplina, filters]);
+  }, [questionsList, activeDisciplina, activeModulo, filters]);
 
   // Disciplinas na ordem oficial do edital (todas, mesmo sem questões)
   const disciplinas = useMemo(() => {
@@ -93,6 +104,17 @@ const Banco = () => {
     });
     return counts;
   }, [questionsList]);
+
+  // Contagem de questões por módulo
+  const moduloCounts = useMemo(() => {
+    const counts = {};
+    Object.entries(MODULOS).forEach(([moduloNome, modulo]) => {
+      counts[moduloNome] = modulo.disciplinas.reduce((total, disc) => {
+        return total + (disciplinaCounts[disc] || 0);
+      }, 0);
+    });
+    return counts;
+  }, [disciplinaCounts]);
 
   // Contagem de questões por origem
   const questoesIA = useMemo(() => questionsList.filter(q => q.geradoIA).length, [questionsList]);
@@ -125,6 +147,18 @@ const Banco = () => {
 
   const handleDisciplinaChange = (disciplina) => {
     setActiveDisciplina(disciplina);
+    if (disciplina) {
+      setActiveModulo(''); // Limpa filtro de módulo quando seleciona disciplina específica
+    }
+    setFilters(prev => ({ ...prev, topico: '' })); // Limpar filtro de tópico
+    setSelectedIds(new Set());
+  };
+
+  const handleModuloChange = (modulo) => {
+    setActiveModulo(modulo);
+    if (modulo) {
+      setActiveDisciplina(''); // Limpa filtro de disciplina quando seleciona módulo
+    }
     setFilters(prev => ({ ...prev, topico: '' })); // Limpar filtro de tópico
     setSelectedIds(new Set());
   };
@@ -227,6 +261,10 @@ const Banco = () => {
 
   const openEditModal = (question) => {
     setEditingQuestion({ ...question });
+    setShowRespostaCorreta(false);
+    setShowExplicacao(false);
+    setShowEnunciado(true);
+    setShowGabarito(false);
     setShowEditModal(true);
   };
 
@@ -607,24 +645,42 @@ ${pasteText}`;
               />
             </div>
             
-            {/* Disciplina */}
+            {/* Módulo / Disciplina */}
             <select
               className="f-sel"
-              value={activeDisciplina}
-              onChange={(e) => handleDisciplinaChange(e.target.value)}
+              value={activeModulo || activeDisciplina}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value.startsWith('modulo:')) {
+                  handleModuloChange(value.replace('modulo:', ''));
+                } else {
+                  handleDisciplinaChange(value);
+                }
+              }}
               style={{ 
                 marginBottom: 0, 
-                minWidth: '160px',
+                minWidth: '220px',
                 borderRadius: '8px',
                 fontSize: '13px',
                 height: '38px'
               }}
             >
-              <option value="">📚 Todas as disciplinas</option>
-              {disciplinas.map(d => (
-                <option key={d} value={d}>
-                  {d} ({disciplinaCounts[d] || 0})
-                </option>
+              <option value="">📚 Todos os módulos</option>
+              {Object.entries(MODULOS).map(([moduloNome, modulo]) => (
+                <>
+                  <option 
+                    key={`modulo:${moduloNome}`} 
+                    value={`modulo:${moduloNome}`}
+                    style={{ fontWeight: 600, background: 'var(--surf2)' }}
+                  >
+                    📁 {modulo.nome} ({moduloCounts[moduloNome] || 0})
+                  </option>
+                  {modulo.disciplinas.map(d => (
+                    <option key={d} value={d}>
+                      └─ {d} ({disciplinaCounts[d] || 0})
+                    </option>
+                  ))}
+                </>
               ))}
             </select>
 
@@ -650,10 +706,11 @@ ${pasteText}`;
             </select>
             
             {/* Limpar filtros */}
-            {(activeDisciplina || filters.topico || filters.search) && (
+            {(activeDisciplina || activeModulo || filters.topico || filters.search) && (
               <button
                 onClick={() => {
                   setActiveDisciplina('');
+                  setActiveModulo('');
                   setFilters({ search: '', topico: '', errosOnly: '', origem: filters.origem });
                 }}
                 style={{
@@ -1717,39 +1774,208 @@ ${pasteText}`;
         </div>
       )}
 
-      {/* Modal Editar Questão */}
+      {/* Modal Editar Questão - Design Moderno */}
       {showEditModal && editingQuestion && (
-        <div className="modal-overlay" onClick={closeEditModal}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="modal-title">✏️ Editar Questão</div>
-            
+        <div className="modal-overlay" onClick={closeEditModal} style={{ backdropFilter: 'blur(4px)' }}>
+          <div 
+            className="modal" 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              maxWidth: '800px', 
+              maxHeight: '95vh', 
+              overflowY: 'auto',
+              borderRadius: '16px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              border: '1px solid var(--brd)'
+            }}
+          >
+            {/* Header Moderno com Badges */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              marginBottom: '20px',
+              paddingBottom: '16px',
+              borderBottom: '1px solid var(--brd)'
+            }}>
+              <div>
+                <div style={{ 
+                  fontSize: '20px', 
+                  fontWeight: 700, 
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  ✏️ Editar Questão
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {(() => {
+                    const origem = getOrigemQuestao(editingQuestion);
+                    return (
+                      <span style={{
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        background: origem.cor,
+                        color: origem.tipo === 'gemini' ? '#000' : '#fff'
+                      }}>
+                        {origem.label}
+                      </span>
+                    );
+                  })()}
+                  {editingQuestion.disciplina && (
+                    <span style={{
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      background: 'var(--acc)',
+                      color: '#fff'
+                    }}>
+                      {editingQuestion.disciplina}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button 
+                onClick={closeEditModal}
+                style={{
+                  background: 'var(--surf2)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '36px',
+                  height: '36px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '18px',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--err)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--surf2)'}
+              >
+                ✕
+              </button>
+            </div>
+
             <form onSubmit={handleUpdateQuestion}>
-              {/* Enunciado */}
-              <div className="fg" style={{ marginBottom: '16px' }}>
-                <label className="flbl">Enunciado *</label>
-                <textarea
-                  className="fta"
-                  rows="4"
-                  value={editingQuestion.enunciado}
-                  onChange={(e) => setEditingQuestion(prev => ({ ...prev, enunciado: e.target.value }))}
-                  placeholder="Digite o enunciado da questão..."
-                  required
-                />
+              {/* Card: Enunciado com toggle */}
+              <div style={{
+                background: 'var(--surf1)',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '16px',
+                border: '1px solid var(--brd)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: showEnunciado ? '12px' : '0'
+                }}>
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px',
+                    fontSize: '12px', 
+                    fontWeight: 600, 
+                    color: 'var(--txt)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    📝 Enunciado
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowEnunciado(!showEnunciado)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '20px',
+                      border: '2px solid',
+                      borderColor: showEnunciado ? 'var(--txt)' : 'var(--brd)',
+                      background: showEnunciado ? 'var(--bg)' : 'transparent',
+                      color: 'var(--txt)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    {showEnunciado ? '📥 Recolher' : '📤 Expandir'}
+                  </button>
+                </div>
+                {showEnunciado && (
+                  <textarea
+                    value={editingQuestion.enunciado}
+                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, enunciado: e.target.value }))}
+                    placeholder="Digite o enunciado da questão..."
+                    required
+                    style={{
+                      width: '100%',
+                      minHeight: '120px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--brd)',
+                      background: 'var(--bg)',
+                      color: 'var(--txt)',
+                      fontSize: '14px',
+                      lineHeight: '1.6',
+                      resize: 'vertical',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                )}
               </div>
 
-              {/* Disciplina e Tópico */}
-              <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
-                <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
-                  <label className="flbl">Disciplina *</label>
+              {/* Grid: Classificação */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '12px',
+                marginBottom: '16px'
+              }}>
+                {/* Disciplina */}
+                <div style={{
+                  background: 'var(--surf1)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  border: '1px solid var(--brd)'
+                }}>
+                  <label style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: 'var(--mut)',
+                    marginBottom: '8px',
+                    display: 'block',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    📚 Disciplina *
+                  </label>
                   <select
-                    className="fsel"
                     value={editingQuestion.disciplina}
                     onChange={(e) => setEditingQuestion(prev => ({ 
                       ...prev, 
                       disciplina: e.target.value,
-                      topico: '' // Reset tópico ao mudar disciplina
+                      topico: ''
                     }))}
                     required
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--brd)',
+                      background: 'var(--bg)',
+                      color: 'var(--txt)',
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
                   >
                     <option value="">Selecione...</option>
                     {DISCIPLINAS.map(d => (
@@ -1757,131 +1983,447 @@ ${pasteText}`;
                     ))}
                   </select>
                 </div>
-                <div className="fg" style={{ flex: 1, minWidth: '200px' }}>
-                  <label className="flbl">Tópico</label>
+
+                {/* Tópico */}
+                <div style={{
+                  background: 'var(--surf1)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  border: '1px solid var(--brd)'
+                }}>
+                  <label style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: 'var(--mut)',
+                    marginBottom: '8px',
+                    display: 'block',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    🏷️ Tópico
+                  </label>
                   <select
-                    className="fsel"
                     value={editingQuestion.topico}
                     onChange={(e) => setEditingQuestion(prev => ({ ...prev, topico: e.target.value }))}
                     disabled={!editingQuestion.disciplina}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--brd)',
+                      background: editingQuestion.disciplina ? 'var(--bg)' : 'var(--surf2)',
+                      color: 'var(--txt)',
+                      fontSize: '13px',
+                      cursor: editingQuestion.disciplina ? 'pointer' : 'not-allowed'
+                    }}
                   >
                     <option value="">
-                      {editingQuestion.disciplina ? 'Selecione...' : 'Escolha a disciplina primeiro'}
+                      {editingQuestion.disciplina ? 'Selecione...' : 'Escolha disciplina primeiro'}
                     </option>
                     {getTopicos(editingQuestion.disciplina).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
-              </div>
 
-              {/* Resposta Correta e Fonte */}
-              <div className="flex gap12" style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
-                <div className="fg" style={{ flex: 1, minWidth: '150px' }}>
-                  <label className="flbl">Resposta Correta *</label>
-                  <select
-                    className="fsel"
-                    value={editingQuestion.respostaCorreta}
-                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, respostaCorreta: e.target.value }))}
-                    required
-                  >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="D">D</option>
-                    <option value="E">E</option>
-                  </select>
+                {/* Gabarito com toggle */}
+                <div style={{
+                  background: 'var(--surf1)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  border: '1px solid var(--brd)'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: showGabarito ? '12px' : '0'
+                  }}>
+                    <label style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'var(--mut)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      ✅ Gabarito
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowGabarito(!showGabarito)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '20px',
+                        border: '2px solid',
+                        borderColor: showGabarito ? 'var(--pri)' : 'var(--brd)',
+                        background: showGabarito ? 'var(--pri)' : 'transparent',
+                        color: showGabarito ? '#000' : 'var(--txt)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      {showGabarito ? '🙈 Ocultar' : '👁️ Revelar'}
+                    </button>
+                  </div>
+                  {showGabarito && (
+                    <div style={{
+                      display: 'flex',
+                      gap: '6px'
+                    }}>
+                      {['A', 'B', 'C', 'D', 'E'].map((letra) => (
+                        <button
+                          key={letra}
+                          type="button"
+                          onClick={() => setEditingQuestion(prev => ({ ...prev, respostaCorreta: letra }))}
+                          style={{
+                            flex: 1,
+                            padding: '10px',
+                            borderRadius: '8px',
+                            border: '2px solid',
+                            borderColor: editingQuestion.respostaCorreta === letra ? 'var(--pri)' : 'var(--brd)',
+                            background: editingQuestion.respostaCorreta === letra ? 'var(--pri)' : 'var(--bg)',
+                            color: editingQuestion.respostaCorreta === letra ? '#000' : 'var(--txt)',
+                            fontWeight: 700,
+                            fontSize: '14px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          {letra}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="fg" style={{ flex: 2, minWidth: '200px' }}>
-                  <label className="flbl">Fonte</label>
+
+                {/* Fonte */}
+                <div style={{
+                  background: 'var(--surf1)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  border: '1px solid var(--brd)'
+                }}>
+                  <label style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: 'var(--mut)',
+                    marginBottom: '8px',
+                    display: 'block',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    📖 Fonte
+                  </label>
                   <input
-                    className="finp"
                     type="text"
                     value={editingQuestion.fonte}
                     onChange={(e) => setEditingQuestion(prev => ({ ...prev, fonte: e.target.value }))}
                     placeholder="Ex: Banca XYZ - 2023"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--brd)',
+                      background: 'var(--bg)',
+                      color: 'var(--txt)',
+                      fontSize: '13px'
+                    }}
                   />
                 </div>
               </div>
 
-              {/* Alternativas */}
-              <div style={{ marginBottom: '16px' }}>
-                <label className="flbl">Alternativas *</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {/* Card: Alternativas com toggle para mostrar resposta */}
+              <div style={{
+                background: 'var(--surf1)',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '16px',
+                border: '1px solid var(--brd)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px'
+                }}>
+                  <label style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--txt)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    🔤 Alternativas
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowRespostaCorreta(!showRespostaCorreta)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '20px',
+                      border: '2px solid',
+                      borderColor: showRespostaCorreta ? 'var(--pri)' : 'var(--brd)',
+                      background: showRespostaCorreta ? 'var(--pri)' : 'transparent',
+                      color: showRespostaCorreta ? '#000' : 'var(--txt)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    {showRespostaCorreta ? '🙈 Ocultar' : '👁️ Revelar'} Resposta
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {editingQuestion.alternativas?.map((alt) => (
-                    <div key={alt.letra} className="flex ac gap8">
+                    <div 
+                      key={alt.letra} 
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        background: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra)
+                          ? 'rgba(74, 222, 128, 0.15)' 
+                          : 'var(--bg)',
+                        border: `2px solid ${(showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? 'var(--pri)' : 'var(--brd)'}`,
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
                       <span 
                         style={{ 
-                          width: '28px', 
-                          height: '28px', 
+                          width: '32px', 
+                          height: '32px', 
                           borderRadius: '50%', 
                           display: 'flex', 
                           alignItems: 'center', 
                           justifyContent: 'center',
-                          fontWeight: 600,
-                          fontSize: '13px',
-                          background: editingQuestion.respostaCorreta === alt.letra ? 'var(--pri)' : 'var(--surf2)',
-                          color: editingQuestion.respostaCorreta === alt.letra ? '#000' : 'var(--txt)'
+                          fontWeight: 700,
+                          fontSize: '14px',
+                          background: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? 'var(--pri)' : 'var(--surf2)',
+                          color: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? '#000' : 'var(--txt)',
+                          flexShrink: 0
                         }}
                       >
                         {alt.letra}
                       </span>
                       <input
-                        className="finp"
                         type="text"
                         value={alt.texto}
                         onChange={(e) => updateEditingAlternativa(alt.letra, e.target.value)}
-                        placeholder={`Alternativa ${alt.letra}`}
+                        placeholder={`Texto da alternativa ${alt.letra}`}
                         required={alt.letra === 'A' || alt.letra === 'B'}
-                        style={{ flex: 1 }}
+                        style={{
+                          flex: 1,
+                          padding: '8px 0',
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--txt)',
+                          fontSize: '14px',
+                          outline: 'none'
+                        }}
                       />
+                      {(showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) && (
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: 'var(--pri)',
+                          padding: '4px 8px',
+                          background: 'rgba(74, 222, 128, 0.2)',
+                          borderRadius: '4px'
+                        }}>
+                          ✓ CORRETA
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Explicação */}
-              <div className="fg" style={{ marginBottom: '20px' }}>
-                <label className="flbl">Explicação / Gabarito Comentado</label>
-                <textarea
-                  className="fta"
-                  rows="3"
-                  value={editingQuestion.explicacao}
-                  onChange={(e) => setEditingQuestion(prev => ({ ...prev, explicacao: e.target.value }))}
-                  placeholder="Explique a resposta correta (opcional)..."
-                />
+              {/* Card: Explicação com toggle */}
+              <div style={{
+                background: 'var(--surf1)',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '20px',
+                border: '1px solid var(--brd)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: showExplicacao ? '12px' : '0'
+                }}>
+                  <label style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--txt)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    💡 Explicação / Gabarito Comentado
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowExplicacao(!showExplicacao)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '20px',
+                      border: '2px solid',
+                      borderColor: showExplicacao ? 'var(--acc)' : 'var(--brd)',
+                      background: showExplicacao ? 'var(--acc)' : 'transparent',
+                      color: showExplicacao ? '#fff' : 'var(--txt)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    {showExplicacao ? '🙈 Ocultar' : '👁️ Revelar'} Explicação
+                  </button>
+                </div>
+                {showExplicacao && (
+                  <textarea
+                    value={editingQuestion.explicacao}
+                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, explicacao: e.target.value }))}
+                    placeholder="Explique a resposta correta..."
+                    style={{
+                      width: '100%',
+                      minHeight: '100px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--brd)',
+                      background: 'var(--bg)',
+                      color: 'var(--txt)',
+                      fontSize: '13px',
+                      lineHeight: '1.6',
+                      resize: 'vertical',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                )}
               </div>
 
-              {/* Histórico da Questão */}
+              {/* Histórico da Questão - Estilo Timeline */}
               {editingQuestion.historico && editingQuestion.historico.length > 0 && (
-                <div className="fg" style={{ marginBottom: '20px', padding: '12px', background: 'var(--bg)', borderRadius: '8px' }}>
-                  <label className="flbl" style={{ fontSize: '11px', color: 'var(--mut)', marginBottom: '8px' }}>📅 Histórico</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{
+                  marginBottom: '24px',
+                  padding: '16px',
+                  background: 'var(--surf1)',
+                  borderRadius: '12px',
+                  border: '1px solid var(--brd)'
+                }}>
+                  <label style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: 'var(--mut)',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    📅 Histórico de Alterações
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {editingQuestion.historico.map((h, i) => (
-                      <div key={i} style={{ fontSize: '11px', color: 'var(--txt)' }}>
-                        <strong style={{ color: h.tipo === 'criacao' ? 'var(--pri)' : 'var(--acc)' }}>
-                          {h.tipo === 'criacao' ? '✨ Criada' : h.tipo === 'importacao' ? '📥 Importada' : '✏️ Editada'}
-                        </strong>
-                        {' '}em {h.dataFormatada || formatarData(h.dataISO)}
-                        {h.detalhes && <span style={{ color: 'var(--mut)', marginLeft: '4px' }}>- {h.detalhes}</span>}
+                      <div 
+                        key={i} 
+                        style={{ 
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          fontSize: '12px',
+                          padding: '8px 12px',
+                          background: 'var(--bg)',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          background: h.tipo === 'criacao' ? 'var(--pri)' : h.tipo === 'importacao' ? 'var(--acc)' : 'var(--warn)',
+                          color: h.tipo === 'criacao' || h.tipo === 'importacao' ? '#000' : '#fff'
+                        }}>
+                          {h.tipo === 'criacao' ? 'CRIADA' : h.tipo === 'importacao' ? 'IMPORTADA' : 'EDITADA'}
+                        </span>
+                        <span style={{ color: 'var(--txt)' }}>
+                          {h.dataFormatada || formatarData(h.dataISO)}
+                        </span>
+                        {h.detalhes && (
+                          <span style={{ color: 'var(--mut)', marginLeft: 'auto' }}>
+                            {h.detalhes}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Botões */}
-              <div className="flex gap12 jc-end">
+              {/* Botões de Ação - Fixos no rodapé */}
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                justifyContent: 'flex-end',
+                paddingTop: '16px',
+                borderTop: '1px solid var(--brd)'
+              }}>
                 <button 
                   type="button" 
-                  className="btn btn-sec"
                   onClick={closeEditModal}
+                  style={{
+                    padding: '12px 24px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--brd)',
+                    background: 'var(--surf2)',
+                    color: 'var(--txt)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit" 
-                  className="btn btn-pri"
+                  style={{
+                    padding: '12px 28px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'var(--pri)',
+                    color: '#000',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 4px 12px rgba(74, 222, 128, 0.3)'
+                  }}
                 >
                   💾 Salvar Alterações
                 </button>
