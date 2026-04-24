@@ -8,6 +8,7 @@ const Topbar = ({ currentView, onToggleSidebar }) => {
     banco: 'Banco de Questões',
     upload: 'Upload de PDF',
     gerador: 'Gerador com IA',
+    'leis-pdf': 'Questões de Leis PDF',
     simulado: 'Simulado',
     revisao: 'Revisão de Erros',
     flashcards: 'Flashcards',

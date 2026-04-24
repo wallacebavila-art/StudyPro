@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStudy } from '../../context/StudyContext';
 
 const Sidebar = () => {
-  const { questions, simulados, currentView, setView, isOnline, isLoading } = useStudy();
+  const { questions, simulados, currentView, setView, isOnline } = useStudy();
   const [isOpen, setIsOpen] = useState(false);
 
   // Proteção contra undefined durante loading

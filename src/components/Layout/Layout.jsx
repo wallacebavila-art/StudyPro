@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -18,18 +17,9 @@ const Layout = () => {
 
   const { currentView, isLoading } = useStudy();
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const toggleSidebar = () => {
-
-    setSidebarOpen(!sidebarOpen);
-
-  };
-
   if (isLoading) {
 
     return (
-
       <div id="init-screen">
 
         <div className="i-logo">StudyPRO</div>
@@ -106,7 +96,7 @@ const Layout = () => {
     <div className="app">
       <Sidebar />
       <div className="main">
-        <Topbar currentView={currentView} onToggleSidebar={toggleSidebar} />
+        <Topbar currentView={currentView} onToggleSidebar={() => {}} />
         <div className="content">
           {renderView()}
         </div>

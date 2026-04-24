@@ -20,21 +20,6 @@ export function formatarData(data) {
   return `${dia}/${mes}/${ano} ${hora}:${minuto}`;
 }
 
-/**
- * Formata apenas a data (DD/MM/YYYY)
- */
-export function formatarDataCurta(data) {
-  if (!data) return '—';
-  
-  const d = new Date(data);
-  if (isNaN(d.getTime())) return '—';
-  
-  const dia = d.getDate().toString().padStart(2, '0');
-  const mes = (d.getMonth() + 1).toString().padStart(2, '0');
-  const ano = d.getFullYear();
-  
-  return `${dia}/${mes}/${ano}`;
-}
 
 /**
  * Formata apenas o horário (HH:MM)
@@ -107,28 +92,6 @@ export function adicionarAoHistorico(questao, tipo, detalhes = '') {
   return questao;
 }
 
-/**
- * Retorna a última data de modificação de uma questão
- */
-export function getUltimaModificacao(questao) {
-  if (questao.updatedAt) {
-    return formatarData(questao.updatedAt);
-  }
-  if (questao.createdAt) {
-    return formatarData(questao.createdAt);
-  }
-  return '—';
-}
-
-/**
- * Retorna a data de criação formatada
- */
-export function getDataCriacao(questao) {
-  if (questao.createdAt) {
-    return formatarData(questao.createdAt);
-  }
-  return '—';
-}
 
 /**
  * Calcula há quanto tempo a questão foi criada
@@ -151,5 +114,5 @@ export function tempoDecorrido(data) {
   if (diffDia === 1) return 'ontem';
   if (diffDia < 30) return `há ${diffDia} dias`;
   
-  return formatarDataCurta(data);
+  return formatarData(data);
 }

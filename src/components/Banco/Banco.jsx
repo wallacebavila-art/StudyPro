@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import { DISCIPLINAS, MODULOS, getTopicos, normalizarTopico, normalizarDisciplina } from '../../config/editalConfig';
 import { analisarClassificacaoQuestoes, gerarRelatorioClassificacao } from '../../utils/questionDiagnostics';
@@ -11,7 +11,6 @@ const Banco = () => {
   const [filters, setFilters] = useState({
     search: '',
     topico: '',
-    errosOnly: '',
     origem: '' // '' = todas, 'ia' = geradas por IA, 'manual' = cadastradas manualmente
   });
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -35,6 +34,9 @@ const Banco = () => {
   const [showExplicacao, setShowExplicacao] = useState(false);
   const [showEnunciado, setShowEnunciado] = useState(true);
   const [showGabarito, setShowGabarito] = useState(false);
+  const [viewStyle, setViewStyle] = useState(() => {
+    return localStorage.getItem('studypro_viewStyle') || 'grid2';
+  });
   const [newQuestion, setNewQuestion] = useState({
     enunciado: '',
     disciplina: '',
@@ -212,11 +214,20 @@ const Banco = () => {
 
   const handleAddQuestion = async (e) => {
     e.preventDefault();
-    
+
     const agora = new Date();
+
+    // Adicionar ID automático [Qxxxx] ao enunciado se não existir
+    let enunciadoComId = newQuestion.enunciado;
+    if (!extrairIdQuestao(enunciadoComId)) {
+      const novoId = gerarIdQuestao();
+      enunciadoComId = `[${novoId}] ${enunciadoComId}`;
+    }
+
     const questionData = {
       id: `q_${Date.now()}`,
       ...newQuestion,
+      enunciado: enunciadoComId,
       geradoIA: addMode === 'paste',
       createdAt: agora.toISOString(),
       updatedAt: agora.toISOString(),
@@ -276,7 +287,20 @@ const Banco = () => {
   const handleUpdateQuestion = async (e) => {
     e.preventDefault();
     if (editingQuestion) {
-      await updateQuestion(editingQuestion.id, editingQuestion);
+      // Adicionar ID automático [Qxxxx] ao enunciado se não existir
+      let enunciadoComId = editingQuestion.enunciado;
+      if (!extrairIdQuestao(enunciadoComId)) {
+        const novoId = gerarIdQuestao();
+        enunciadoComId = `[${novoId}] ${enunciadoComId}`;
+      }
+
+      const questionData = {
+        ...editingQuestion,
+        enunciado: enunciadoComId,
+        updatedAt: new Date().toISOString()
+      };
+
+      await updateQuestion(editingQuestion.id, questionData);
       closeEditModal();
     }
   };
@@ -370,7 +394,7 @@ ${pasteText}`;
   const updateAlternativa = (letra, texto) => {
     setNewQuestion(prev => ({
       ...prev,
-      alternativas: prev.alternativas.map(alt =>
+      alternativas: prev.alternativas.map(alt => 
         alt.letra === letra ? { ...alt, texto } : alt
       ),
     }));
@@ -405,31 +429,84 @@ ${pasteText}`;
     return similaridade;
   };
 
-  // Detectar duplicatas nas questões
+  // Extrair número de identificação do enunciado (ex: [Q3247383])
+  const extrairIdQuestao = (enunciado) => {
+    const match = (enunciado || '').match(/\[Q(\d+)\]/);
+    return match ? match[1] : null;
+  };
+
+  // Gerar novo ID único para questão
+  const gerarIdQuestao = () => {
+    return `Q${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  };
+
+  // Detectar duplicatas nas questões (por similaridade de texto e por ID)
   const duplicatas = useMemo(() => {
     const listaDuplicatas = [];
-    const threshold = 0.7; // 70% de similaridade
-    
+    const idMap = new Map(); // Map<questaoId, questao>
+    const processados = new Set(); // Evitar duplicatas duplicadas
+    let comId = 0;
+    let semId = 0;
+
+    // Primeiro: detectar por ID [Qxxxx]
+    for (const q of questionsList) {
+      const questaoId = extrairIdQuestao(q.enunciado);
+      if (questaoId) {
+        comId++;
+        if (idMap.has(questaoId)) {
+          const q1 = idMap.get(questaoId);
+          const key = `${q1.id}-${q.id}`;
+          if (!processados.has(key)) {
+            listaDuplicatas.push({
+              q1,
+              q2: q,
+              questaoId,
+              tipo: 'id',
+              similaridade: 100
+            });
+            processados.add(key);
+            processados.add(`${q.id}-${q1.id}`);
+          }
+        } else {
+          idMap.set(questaoId, q);
+        }
+      } else {
+        semId++;
+      }
+    }
+
+    // Segundo: detectar por similaridade de texto (para questões sem ID ou com texto similar)
+    const threshold = 0.75; // 75% de similaridade
     for (let i = 0; i < questionsList.length; i++) {
       for (let j = i + 1; j < questionsList.length; j++) {
         const q1 = questionsList[i];
         const q2 = questionsList[j];
-        
-        // Só compara mesma disciplina
-        if (normalizarDisciplina(q1.disciplina) !== normalizarDisciplina(q2.disciplina)) continue;
-        
-        const similaridade = calcularSimilaridade(q1.enunciado, q2.enunciado);
-        
+        const key = `${q1.id}-${q2.id}`;
+
+        // Pular se já detectado por ID
+        if (processados.has(key)) continue;
+
+        // Calcular similaridade apenas no enunciado (primeiros 200 chars)
+        const enun1 = (q1.enunciado || '').substring(0, 200);
+        const enun2 = (q2.enunciado || '').substring(0, 200);
+        const similaridade = calcularSimilaridade(enun1, enun2);
+
         if (similaridade >= threshold) {
           listaDuplicatas.push({
             q1,
             q2,
+            questaoId: null,
+            tipo: 'similaridade',
             similaridade: Math.round(similaridade * 100)
           });
+          processados.add(key);
+          processados.add(`${q2.id}-${q1.id}`);
         }
       }
     }
-    
+
+    console.log(`📊 SCAN DE DUPLICATAS: ${questionsList.length} questões | ${comId} com ID [Qxxxx] | ${semId} sem ID | ${listaDuplicatas.length} duplicatas (${listaDuplicatas.filter(d => d.tipo === 'id').length} por ID, ${listaDuplicatas.filter(d => d.tipo === 'similaridade').length} por similaridade)`);
+
     return listaDuplicatas;
   }, [questionsList]);
 
@@ -528,6 +605,16 @@ ${pasteText}`;
     return { total, porDisciplina, disciplinasCount: Object.keys(porDisciplina).length };
   }, [questionsList]);
 
+  const setTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('studypro_theme', theme);
+  };
+
+  const handleViewStyleChange = (style) => {
+    setViewStyle(style);
+    localStorage.setItem('studypro_viewStyle', style);
+  };
+
   return (
     <div id="view-banco" className="view active" style={{
       width: '100%',
@@ -549,9 +636,13 @@ ${pasteText}`;
             </h1>
             <p style={{ margin: 0, color: 'var(--mut)', fontSize: '13px' }}>
               {stats.total} questões em {stats.disciplinasCount} disciplinas
-              {duplicatas.length > 0 && (
+              {duplicatas.length > 0 ? (
                 <span style={{ color: 'var(--warn)', marginLeft: '12px', fontWeight: 600 }}>
-                  ⚠️ {duplicatas.length} possíveis duplicatas
+                  ⚠️ {duplicatas.length} duplicatas detectadas
+                </span>
+              ) : (
+                <span style={{ color: 'var(--pri)', marginLeft: '12px', fontSize: '11px' }}>
+                  ✅ Scan ativo (ID + similaridade)
                 </span>
               )}
             </p>
@@ -607,6 +698,30 @@ ${pasteText}`;
               <span>➕</span>
               Nova Questão
             </button>
+
+            {/* Seletor de estilo de visualização */}
+            <select
+              value={viewStyle}
+              onChange={(e) => handleViewStyleChange(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                fontSize: '12px',
+                borderRadius: '8px',
+                border: '1px solid var(--brd)',
+                background: 'var(--surf)',
+                color: 'var(--txt)',
+                cursor: 'pointer',
+                fontWeight: 500
+              }}
+              title="Estilo de visualização"
+            >
+              <option value="grid2">⬜⬜ Grid 2 colunas</option>
+              <option value="list">📋 Lista vertical</option>
+              <option value="full">⬛ Cards largura total</option>
+              <option value="grid3">⬜⬜⬜ Grid 3 colunas</option>
+              <option value="compact">📑 Compacto</option>
+              <option value="table">📊 Tabela</option>
+            </select>
           </div>
         </div>
 
@@ -667,9 +782,8 @@ ${pasteText}`;
             >
               <option value="">📚 Todos os módulos</option>
               {Object.entries(MODULOS).map(([moduloNome, modulo]) => (
-                <>
+                <React.Fragment key={`modulo:${moduloNome}`}>
                   <option 
-                    key={`modulo:${moduloNome}`} 
                     value={`modulo:${moduloNome}`}
                     style={{ fontWeight: 600, background: 'var(--surf2)' }}
                   >
@@ -680,10 +794,10 @@ ${pasteText}`;
                       └─ {d} ({disciplinaCounts[d] || 0})
                     </option>
                   ))}
-                </>
+                </React.Fragment>
               ))}
             </select>
-
+            
             {/* Tópico */}
             <select
               className="f-sel"
@@ -711,7 +825,7 @@ ${pasteText}`;
                 onClick={() => {
                   setActiveDisciplina('');
                   setActiveModulo('');
-                  setFilters({ search: '', topico: '', errosOnly: '', origem: filters.origem });
+                  setFilters({ search: '', topico: '', origem: filters.origem });
                 }}
                 style={{
                   fontSize: '12px',
@@ -857,12 +971,10 @@ ${pasteText}`;
         </div>
       </div>
 
-      {/* Área scrollável - Lista de questões em grid 2 colunas */}
+      {/* Área scrollável - Lista de questões com estilos variados */}
       <div id="banco-list" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
-        gap: '12px',
-        alignContent: 'start',
+        display: 'flex',
+        flexDirection: 'column',
         flex: 1,
         overflowY: 'scroll',
         overflowX: 'hidden',
@@ -870,74 +982,426 @@ ${pasteText}`;
         paddingLeft: '4px'
       }}>
         {filteredQuestions.length ? (
-          filteredQuestions.map(q => (
-            <div key={q.id} className={`q-card ${selectedIds.has(q.id) ? 'selected' : ''}`} style={{
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: '180px'
-            }}>
-              <div className="q-meta" style={{ flexShrink: 0 }}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(q.id)}
-                  onChange={() => toggleSelection(q.id)}
-                  style={{ cursor: 'pointer' }}
-                />
-                {activeDisciplina === '' && <span className="badge bb">{normalizarDisciplina(q.disciplina) || '—'}</span>}
-                {q.topico && <span className="badge bm">{normalizarTopico(q.topico)}</span>}
-                {/* Badge de origem da questão */}
-                {(() => {
-                  const origem = getOrigemQuestao(q);
-                  return (
-                    <span 
-                      className="badge" 
-                      style={{ 
-                        background: origem.cor, 
-                        color: origem.tipo === 'gemini' ? '#000' : '#fff',
-                        fontSize: '10px',
-                        fontWeight: 600
-                      }}
-                      title={`Origem: ${origem.tipo}`}
-                    >
-                      {origem.label}
+          <>
+            {/* 1. GRID 2 COLUNAS */}
+            {viewStyle === 'grid2' && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '12px',
+                alignContent: 'start'
+              }}>
+                {filteredQuestions.map(q => (
+                  <div key={q.id} className={`q-card ${selectedIds.has(q.id) ? 'selected' : ''}`} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: '180px'
+                  }}>
+                    <div className="q-meta" style={{ flexShrink: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(q.id)}
+                        onChange={() => toggleSelection(q.id)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      {activeDisciplina === '' && <span className="badge bb">{normalizarDisciplina(q.disciplina) || '—'}</span>}
+                      {q.topico && <span className="badge bm">{normalizarTopico(q.topico)}</span>}
+                      {(() => {
+                        const origem = getOrigemQuestao(q);
+                        return (
+                          <span 
+                            className="badge" 
+                            style={{ 
+                              background: origem.cor, 
+                              color: origem.tipo === 'gemini' ? '#000' : '#fff',
+                              fontSize: '10px',
+                              fontWeight: 600
+                            }}
+                            title={`Origem: ${origem.tipo}`}
+                          >
+                            {origem.label}
+                          </span>
+                        );
+                      })()}
+                      {duplicatas.some(d => 
+                        (d.q1.id === q.id || d.q2.id === q.id) && duplicataFoiAceita(d.q1.id, d.q2.id)
+                      ) && (
+                        <span 
+                          className="badge" 
+                          style={{ background: 'var(--pri)', color: '#000', fontSize: '10px' }}
+                          title="Esta questão foi aceita como duplicata"
+                        >
+                          ✅ Duplicata
+                        </span>
+                      )}
+                      <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--mut)', fontFamily: 'JetBrains Mono' }}>
+                        {q.fonte || ''}
+                      </span>
+                      <span style={{ marginLeft: '8px', fontSize: '10px', color: 'var(--mut)' }} title={formatarData(q.createdAt)}>
+                        📅 {tempoDecorrido(q.createdAt)}
+                      </span>
+                    </div>
+                    <div className="q-text" style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 4,
+                      WebkitBoxOrient: 'vertical',
+                      fontSize: '11px',
+                      lineHeight: '1.4'
+                    }}>{q.enunciado || ''}</div>
+                    <div className="q-actions" style={{ flexShrink: 0, marginTop: 'auto' }}>
+                      <button className="btn btn-sec btn-sm" onClick={() => openEditModal(q)}>✏️ Editar</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => confirmDeleteQuestion(q.id)}>🗑️ Deletar</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 2. LISTA VERTICAL */}
+            {viewStyle === 'list' && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {filteredQuestions.map(q => (
+                  <div key={q.id} className={`q-card ${selectedIds.has(q.id) ? 'selected' : ''}`} style={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: '10px 14px',
+                    gap: '12px'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(q.id)}
+                      onChange={() => toggleSelection(q.id)}
+                      style={{ cursor: 'pointer', flexShrink: 0 }}
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {activeDisciplina === '' && <span className="badge bb" style={{ fontSize: '10px' }}>{normalizarDisciplina(q.disciplina) || '—'}</span>}
+                        {q.topico && <span className="badge bm" style={{ fontSize: '10px' }}>{normalizarTopico(q.topico)}</span>}
+                        {(() => {
+                          const origem = getOrigemQuestao(q);
+                          return (
+                            <span 
+                              className="badge" 
+                              style={{ 
+                                background: origem.cor, 
+                                color: origem.tipo === 'gemini' ? '#000' : '#fff',
+                                fontSize: '9px',
+                                fontWeight: 600
+                              }}
+                            >
+                              {origem.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <div style={{
+                        fontSize: '11px',
+                        color: 'var(--txt)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        lineHeight: '1.3'
+                      }}>
+                        {(q.enunciado || '').substring(0, 120)}...
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '10px', color: 'var(--mut)', flexShrink: 0 }}>
+                      📅 {tempoDecorrido(q.createdAt)}
                     </span>
-                  );
-                })()}
-                {/* Badge de duplicata aceita */}
-                {duplicatas.some(d => 
-                  (d.q1.id === q.id || d.q2.id === q.id) && duplicataFoiAceita(d.q1.id, d.q2.id)
-                ) && (
-                  <span 
-                    className="badge" 
-                    style={{ background: 'var(--pri)', color: '#000', fontSize: '10px' }}
-                    title="Esta questão foi aceita como duplicata"
-                  >
-                    ✅ Duplicata Aceita
-                  </span>
-                )}
-                <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--mut)', fontFamily: 'JetBrains Mono' }}>
-                  {q.fonte || ''}
-                </span>
-                {/* Data de criação */}
-                <span style={{ marginLeft: '8px', fontSize: '10px', color: 'var(--mut)' }} title={formatarData(q.createdAt)}>
-                  📅 {tempoDecorrido(q.createdAt)}
-                </span>
+                    <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                      <button className="btn btn-sec btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => openEditModal(q)}>✏️</button>
+                      <button className="btn btn-danger btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => confirmDeleteQuestion(q.id)}>🗑️</button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="q-text" style={{
-                flex: 1,
-                overflow: 'hidden',
-                display: '-webkit-box',
-                WebkitLineClamp: 4,
-                WebkitBoxOrient: 'vertical',
-                fontSize: '13px',
-                lineHeight: '1.5'
-              }}>{q.enunciado || ''}</div>
-              <div className="q-actions" style={{ flexShrink: 0, marginTop: 'auto' }}>
-                <button className="btn btn-sec btn-sm" onClick={() => openEditModal(q)}>✏️ Editar</button>
-                <button className="btn btn-danger btn-sm" onClick={() => confirmDeleteQuestion(q.id)}>🗑️ Deletar</button>
+            )}
+
+            {/* 3. CARDS LARGURA TOTAL */}
+            {viewStyle === 'full' && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                {filteredQuestions.map(q => (
+                  <div key={q.id} className={`q-card ${selectedIds.has(q.id) ? 'selected' : ''}`} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: '14px 18px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(q.id)}
+                          onChange={() => toggleSelection(q.id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        {activeDisciplina === '' && <span className="badge bb">{normalizarDisciplina(q.disciplina) || '—'}</span>}
+                        {q.topico && <span className="badge bm">{normalizarTopico(q.topico)}</span>}
+                        {(() => {
+                          const origem = getOrigemQuestao(q);
+                          return (
+                            <span 
+                              className="badge" 
+                              style={{ 
+                                background: origem.cor, 
+                                color: origem.tipo === 'gemini' ? '#000' : '#fff',
+                                fontSize: '10px',
+                                fontWeight: 600
+                              }}
+                            >
+                              {origem.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <span style={{ fontSize: '11px', color: 'var(--mut)' }}>
+                        📅 {tempoDecorrido(q.createdAt)}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      lineHeight: '1.5',
+                      color: 'var(--txt)',
+                      marginBottom: '12px'
+                    }}>
+                      {q.enunciado || ''}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                      <button className="btn btn-sec btn-sm" onClick={() => openEditModal(q)}>✏️ Editar</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => confirmDeleteQuestion(q.id)}>🗑️ Deletar</button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))
+            )}
+
+            {/* 4. GRID 3 COLUNAS */}
+            {viewStyle === 'grid3' && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '10px',
+                alignContent: 'start'
+              }}>
+                {filteredQuestions.map(q => (
+                  <div key={q.id} className={`q-card ${selectedIds.has(q.id) ? 'selected' : ''}`} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: '150px',
+                    padding: '10px'
+                  }}>
+                    <div className="q-meta" style={{ flexShrink: 0, marginBottom: '6px' }}>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                        {activeDisciplina === '' && <span className="badge bb" style={{ fontSize: '9px' }}>{normalizarDisciplina(q.disciplina) || '—'}</span>}
+                        {q.topico && <span className="badge bm" style={{ fontSize: '9px' }}>{normalizarTopico(q.topico)}</span>}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(q.id)}
+                          onChange={() => toggleSelection(q.id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        {(() => {
+                          const origem = getOrigemQuestao(q);
+                          return (
+                            <span 
+                              className="badge" 
+                              style={{ 
+                                background: origem.cor, 
+                                color: origem.tipo === 'gemini' ? '#000' : '#fff',
+                                fontSize: '9px',
+                                fontWeight: 600
+                              }}
+                            >
+                              {origem.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <div className="q-text" style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical',
+                      fontSize: '10px',
+                      lineHeight: '1.35',
+                      marginBottom: '8px'
+                    }}>{q.enunciado || ''}</div>
+                    <div className="q-actions" style={{ flexShrink: 0, display: 'flex', gap: '4px' }}>
+                      <button className="btn btn-sec btn-sm" style={{ padding: '3px 6px', fontSize: '10px' }} onClick={() => openEditModal(q)}>✏️</button>
+                      <button className="btn btn-danger btn-sm" style={{ padding: '3px 6px', fontSize: '10px' }} onClick={() => confirmDeleteQuestion(q.id)}>🗑️</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 5. COMPACTO */}
+            {viewStyle === 'compact' && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px'
+              }}>
+                {filteredQuestions.map(q => (
+                  <div key={q.id} className={`q-card ${selectedIds.has(q.id) ? 'selected' : ''}`} style={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    gap: '10px'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(q.id)}
+                      onChange={() => toggleSelection(q.id)}
+                      style={{ cursor: 'pointer', flexShrink: 0 }}
+                    />
+                    <span className="badge bb" style={{ fontSize: '9px', flexShrink: 0 }}>
+                      {normalizarDisciplina(q.disciplina) || '—'}
+                    </span>
+                    <div style={{
+                      flex: 1,
+                      fontSize: '10px',
+                      color: 'var(--txt)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      lineHeight: '1.3'
+                    }}>
+                      {(q.enunciado || '').substring(0, 80)}...
+                    </div>
+                    {(() => {
+                      const origem = getOrigemQuestao(q);
+                      return (
+                        <span 
+                          className="badge" 
+                          style={{ 
+                            background: origem.cor, 
+                            color: origem.tipo === 'gemini' ? '#000' : '#fff',
+                            fontSize: '9px',
+                            flexShrink: 0
+                          }}
+                        >
+                          {origem.label}
+                        </span>
+                      );
+                    })()}
+                    <span style={{ fontSize: '9px', color: 'var(--mut)', flexShrink: 0 }}>
+                      {tempoDecorrido(q.createdAt)}
+                    </span>
+                    <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
+                      <button className="btn btn-sec btn-sm" style={{ padding: '3px 6px', fontSize: '10px' }} onClick={() => openEditModal(q)}>✏️</button>
+                      <button className="btn btn-danger btn-sm" style={{ padding: '3px 6px', fontSize: '10px' }} onClick={() => confirmDeleteQuestion(q.id)}>🗑️</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 6. TABELA */}
+            {viewStyle === 'table' && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                border: '1px solid var(--brd)',
+                borderRadius: '8px',
+                overflow: 'hidden'
+              }}>
+                {/* Cabeçalho */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '40px 1fr 100px 80px 90px',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  background: 'var(--surf2)',
+                  borderBottom: '1px solid var(--brd)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: 'var(--mut)'
+                }}>
+                  <div></div>
+                  <div>Enunciado</div>
+                  <div>Disciplina</div>
+                  <div>Origem</div>
+                  <div style={{ textAlign: 'center' }}>Ações</div>
+                </div>
+                {/* Linhas */}
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {filteredQuestions.map(q => (
+                    <div 
+                      key={q.id} 
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '40px 1fr 100px 80px 90px',
+                        gap: '8px',
+                        padding: '8px 12px',
+                        borderBottom: '1px solid var(--brd)',
+                        alignItems: 'center',
+                        background: selectedIds.has(q.id) ? 'var(--pri-dim)' : 'transparent'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(q.id)}
+                        onChange={() => toggleSelection(q.id)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <div style={{
+                        fontSize: '10px',
+                        color: 'var(--txt)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        lineHeight: '1.3'
+                      }}>
+                        {(q.enunciado || '').substring(0, 60)}...
+                      </div>
+                      <div>
+                        <span className="badge bb" style={{ fontSize: '9px' }}>
+                          {normalizarDisciplina(q.disciplina) || '—'}
+                        </span>
+                      </div>
+                      <div>
+                        {(() => {
+                          const origem = getOrigemQuestao(q);
+                          return (
+                            <span 
+                              className="badge" 
+                              style={{ 
+                                background: origem.cor, 
+                                color: origem.tipo === 'gemini' ? '#000' : '#fff',
+                                fontSize: '9px'
+                              }}
+                            >
+                              {origem.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button className="btn btn-sec btn-sm" style={{ padding: '3px 6px', fontSize: '10px' }} onClick={() => openEditModal(q)}>✏️</button>
+                        <button className="btn btn-danger btn-sm" style={{ padding: '3px 6px', fontSize: '10px' }} onClick={() => confirmDeleteQuestion(q.id)}>🗑️</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="empty" style={{ gridColumn: '1 / -1' }}>
             <span className="empty-ico">🔍</span>
@@ -998,7 +1462,7 @@ ${pasteText}`;
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-title">⚠️ Possíveis Duplicatas Detectadas</div>
             <p style={{ marginBottom: '16px', color: 'var(--mut)' }}>
-              Encontramos {duplicatas.filter(d => !duplicataFoiAceita(d.q1.id, d.q2.id)).length} pares pendentes de revisão (≥70% de similaridade):
+              Encontramos {duplicatas.filter(d => !duplicataFoiAceita(d.q1.id, d.q2.id)).length} pares pendentes de revisão (mesmo ID de questão):
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
               {duplicatas.map((dup, index) => {
@@ -1024,7 +1488,7 @@ ${pasteText}`;
                         )}
                       </div>
                       <span style={{ color: foiAceita ? 'var(--pri)' : 'var(--warn)', fontWeight: 600, fontSize: '12px' }}>
-                        {dup.similaridade}% similar
+                        ID: [Q{dup.questaoId}]
                       </span>
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--mut)', marginBottom: '4px' }}>
@@ -1382,9 +1846,18 @@ ${pasteText}`;
           >
             <div className="modal-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>🔍 Comparação Lado a Lado</span>
-              <span style={{ fontSize: '14px', color: 'var(--warn)' }}>
-                {duplicataComparacao.similaridade}% similar
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  className={`btn btn-sm ${showGabarito ? 'btn-pri' : 'btn-sec'}`}
+                  onClick={() => setShowGabarito(!showGabarito)}
+                  style={{ fontSize: '12px', padding: '6px 12px' }}
+                >
+                  {showGabarito ? '🙈 Ocultar Gabarito' : '👁️ Mostrar Gabarito'}
+                </button>
+                <span style={{ fontSize: '14px', color: 'var(--warn)' }}>
+                  ID: [Q{duplicataComparacao.questaoId}]
+                </span>
+              </div>
             </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
@@ -1410,22 +1883,28 @@ ${pasteText}`;
                 </div>
                 
                 <div style={{ marginBottom: '16px' }}>
-                  <label className="flbl" style={{ fontSize: '11px' }}>Enunciado</label>
+                  <label className="flbl" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📝 Enunciado</span>
+                    <span className="badge" style={{ fontSize: '10px', background: 'var(--bg)' }}>
+                      ID: {duplicataComparacao.q1.id}
+                    </span>
+                  </label>
                   <div style={{ 
                     background: 'var(--bg)', 
                     padding: '12px', 
                     borderRadius: '8px',
                     fontSize: '14px',
                     lineHeight: '1.6',
-                    maxHeight: '200px',
-                    overflowY: 'auto'
+                    maxHeight: '250px',
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap'
                   }}>
                     {duplicataComparacao.q1.enunciado || 'Sem enunciado'}
                   </div>
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
-                  <label className="flbl" style={{ fontSize: '11px' }}>Alternativas</label>
+                  <label className="flbl" style={{ fontSize: '11px' }}>📝 Alternativas</label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {duplicataComparacao.q1.alternativas?.map((alt) => (
                       <div 
@@ -1435,23 +1914,101 @@ ${pasteText}`;
                           gap: '8px',
                           padding: '8px 10px',
                           borderRadius: '6px',
-                          background: duplicataComparacao.q1.respostaCorreta === alt.letra ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg)',
-                          border: duplicataComparacao.q1.respostaCorreta === alt.letra ? '1px solid var(--pri)' : '1px solid transparent'
+                          background: showGabarito && duplicataComparacao.q1.respostaCorreta === alt.letra ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg)',
+                          border: showGabarito && duplicataComparacao.q1.respostaCorreta === alt.letra ? '1px solid var(--pri)' : '1px solid transparent'
                         }}
                       >
                         <span style={{ fontWeight: 700, minWidth: '20px' }}>{alt.letra})</span>
-                        <span>{alt.texto || '—'}</span>
-                        {duplicataComparacao.q1.respostaCorreta === alt.letra && (
-                          <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--pri)' }}>✓ Correta</span>
+                        <span style={{ flex: 1 }}>{alt.texto || '—'}</span>
+                        {showGabarito && duplicataComparacao.q1.respostaCorreta === alt.letra && (
+                          <span style={{ fontSize: '11px', color: 'var(--pri)', fontWeight: 600 }}>✓ Correta</span>
                         )}
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--mut)' }}>
-                  {duplicataComparacao.q1.topico && (
-                    <span>🏷️ {normalizarTopico(duplicataComparacao.q1.topico)}</span>
+                {/* Gabarito (quando visível) */}
+                {showGabarito && (
+                  <div style={{ 
+                    marginBottom: '12px', 
+                    padding: '10px 12px', 
+                    background: 'rgba(74, 222, 128, 0.1)', 
+                    borderRadius: '6px',
+                    border: '1px solid var(--pri)'
+                  }}>
+                    <label className="flbl" style={{ fontSize: '11px', color: 'var(--pri)' }}>✅ Gabarito</label>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--pri)' }}>
+                      Resposta Correta: {duplicataComparacao.q1.respostaCorreta}
+                    </div>
+                  </div>
+                )}
+
+                {/* Explicação */}
+                {duplicataComparacao.q1.explicacao && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <label className="flbl" style={{ fontSize: '11px' }}>💡 Explicação</label>
+                    <div style={{ 
+                      background: 'var(--surf1)', 
+                      padding: '10px', 
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      color: 'var(--txt)',
+                      maxHeight: '150px',
+                      overflowY: 'auto'
+                    }}>
+                      {duplicataComparacao.q1.explicacao}
+                    </div>
+                  </div>
+                )}
+
+                {/* Informações Adicionais */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '1fr 1fr', 
+                  gap: '8px',
+                  marginBottom: '12px',
+                  padding: '10px',
+                  background: 'var(--surf1)',
+                  borderRadius: '6px',
+                  fontSize: '11px'
+                }}>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>📚 Disciplina:</span>
+                    <div style={{ fontWeight: 500 }}>{duplicataComparacao.q1.disciplina || '—'}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>🏷️ Tópico:</span>
+                    <div style={{ fontWeight: 500 }}>{duplicataComparacao.q1.topico || '—'}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>📄 Fonte:</span>
+                    <div style={{ fontWeight: 500 }}>{duplicataComparacao.q1.fonte || '—'}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>🤖 Origem:</span>
+                    <div style={{ fontWeight: 500 }}>
+                      {duplicataComparacao.q1.geradoIA ? 'Gerado por IA' : duplicataComparacao.q1._metodo === 'parser-local' ? 'Parser Local' : 'Manual'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Datas */}
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '12px',
+                  fontSize: '10px',
+                  color: 'var(--mut)',
+                  padding: '8px',
+                  background: 'var(--bg)',
+                  borderRadius: '4px'
+                }}>
+                  {duplicataComparacao.q1.createdAt && (
+                    <span>📅 Criada: {new Date(duplicataComparacao.q1.createdAt).toLocaleString('pt-BR')}</span>
+                  )}
+                  {duplicataComparacao.q1.updatedAt && duplicataComparacao.q1.updatedAt !== duplicataComparacao.q1.createdAt && (
+                    <span>🔄 Atualizada: {new Date(duplicataComparacao.q1.updatedAt).toLocaleString('pt-BR')}</span>
                   )}
                 </div>
               </div>
@@ -1478,22 +2035,28 @@ ${pasteText}`;
                 </div>
                 
                 <div style={{ marginBottom: '16px' }}>
-                  <label className="flbl" style={{ fontSize: '11px' }}>Enunciado</label>
+                  <label className="flbl" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📝 Enunciado</span>
+                    <span className="badge" style={{ fontSize: '10px', background: 'var(--bg)' }}>
+                      ID: {duplicataComparacao.q2.id}
+                    </span>
+                  </label>
                   <div style={{ 
                     background: 'var(--bg)', 
                     padding: '12px', 
                     borderRadius: '8px',
                     fontSize: '14px',
                     lineHeight: '1.6',
-                    maxHeight: '200px',
-                    overflowY: 'auto'
+                    maxHeight: '250px',
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap'
                   }}>
                     {duplicataComparacao.q2.enunciado || 'Sem enunciado'}
                   </div>
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
-                  <label className="flbl" style={{ fontSize: '11px' }}>Alternativas</label>
+                  <label className="flbl" style={{ fontSize: '11px' }}>📝 Alternativas</label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {duplicataComparacao.q2.alternativas?.map((alt) => (
                       <div 
@@ -1503,23 +2066,101 @@ ${pasteText}`;
                           gap: '8px',
                           padding: '8px 10px',
                           borderRadius: '6px',
-                          background: duplicataComparacao.q2.respostaCorreta === alt.letra ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg)',
-                          border: duplicataComparacao.q2.respostaCorreta === alt.letra ? '1px solid var(--pri)' : '1px solid transparent'
+                          background: showGabarito && duplicataComparacao.q2.respostaCorreta === alt.letra ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg)',
+                          border: showGabarito && duplicataComparacao.q2.respostaCorreta === alt.letra ? '1px solid var(--pri)' : '1px solid transparent'
                         }}
                       >
                         <span style={{ fontWeight: 700, minWidth: '20px' }}>{alt.letra})</span>
-                        <span>{alt.texto || '—'}</span>
-                        {duplicataComparacao.q2.respostaCorreta === alt.letra && (
-                          <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--pri)' }}>✓ Correta</span>
+                        <span style={{ flex: 1 }}>{alt.texto || '—'}</span>
+                        {showGabarito && duplicataComparacao.q2.respostaCorreta === alt.letra && (
+                          <span style={{ fontSize: '11px', color: 'var(--pri)', fontWeight: 600 }}>✓ Correta</span>
                         )}
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--mut)' }}>
-                  {duplicataComparacao.q2.topico && (
-                    <span>🏷️ {normalizarTopico(duplicataComparacao.q2.topico)}</span>
+                {/* Gabarito (quando visível) */}
+                {showGabarito && (
+                  <div style={{ 
+                    marginBottom: '12px', 
+                    padding: '10px 12px', 
+                    background: 'rgba(74, 222, 128, 0.1)', 
+                    borderRadius: '6px',
+                    border: '1px solid var(--pri)'
+                  }}>
+                    <label className="flbl" style={{ fontSize: '11px', color: 'var(--pri)' }}>✅ Gabarito</label>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--pri)' }}>
+                      Resposta Correta: {duplicataComparacao.q2.respostaCorreta}
+                    </div>
+                  </div>
+                )}
+
+                {/* Explicação */}
+                {duplicataComparacao.q2.explicacao && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <label className="flbl" style={{ fontSize: '11px' }}>💡 Explicação</label>
+                    <div style={{ 
+                      background: 'var(--surf1)', 
+                      padding: '10px', 
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      color: 'var(--txt)',
+                      maxHeight: '150px',
+                      overflowY: 'auto'
+                    }}>
+                      {duplicataComparacao.q2.explicacao}
+                    </div>
+                  </div>
+                )}
+
+                {/* Informações Adicionais */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '1fr 1fr', 
+                  gap: '8px',
+                  marginBottom: '12px',
+                  padding: '10px',
+                  background: 'var(--surf1)',
+                  borderRadius: '6px',
+                  fontSize: '11px'
+                }}>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>📚 Disciplina:</span>
+                    <div style={{ fontWeight: 500 }}>{duplicataComparacao.q2.disciplina || '—'}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>🏷️ Tópico:</span>
+                    <div style={{ fontWeight: 500 }}>{duplicataComparacao.q2.topico || '—'}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>📄 Fonte:</span>
+                    <div style={{ fontWeight: 500 }}>{duplicataComparacao.q2.fonte || '—'}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--mut)' }}>🤖 Origem:</span>
+                    <div style={{ fontWeight: 500 }}>
+                      {duplicataComparacao.q2.geradoIA ? 'Gerado por IA' : duplicataComparacao.q2._metodo === 'parser-local' ? 'Parser Local' : 'Manual'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Datas */}
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '12px',
+                  fontSize: '10px',
+                  color: 'var(--mut)',
+                  padding: '8px',
+                  background: 'var(--bg)',
+                  borderRadius: '4px'
+                }}>
+                  {duplicataComparacao.q2.createdAt && (
+                    <span>📅 Criada: {new Date(duplicataComparacao.q2.createdAt).toLocaleString('pt-BR')}</span>
+                  )}
+                  {duplicataComparacao.q2.updatedAt && duplicataComparacao.q2.updatedAt !== duplicataComparacao.q2.createdAt && (
+                    <span>🔄 Atualizada: {new Date(duplicataComparacao.q2.updatedAt).toLocaleString('pt-BR')}</span>
                   )}
                 </div>
               </div>
@@ -1781,12 +2422,17 @@ ${pasteText}`;
             className="modal" 
             onClick={(e) => e.stopPropagation()} 
             style={{ 
-              maxWidth: '800px', 
-              maxHeight: '95vh', 
+              width: '95vw',
+              maxWidth: '1400px', 
+              height: '90vh',
+              maxHeight: '90vh', 
               overflowY: 'auto',
-              borderRadius: '16px',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-              border: '1px solid var(--brd)'
+              borderRadius: '12px',
+              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.3)',
+              border: '1px solid var(--brd)',
+              padding: '16px 24px',
+              display: 'flex',
+              flexDirection: 'column'
             }}
           >
             {/* Header Moderno com Badges */}
@@ -1794,18 +2440,18 @@ ${pasteText}`;
               display: 'flex', 
               alignItems: 'center', 
               justifyContent: 'space-between',
-              marginBottom: '20px',
-              paddingBottom: '16px',
+              marginBottom: '12px',
+              paddingBottom: '10px',
               borderBottom: '1px solid var(--brd)'
             }}>
               <div>
                 <div style={{ 
-                  fontSize: '20px', 
+                  fontSize: '16px', 
                   fontWeight: 700, 
-                  marginBottom: '8px',
+                  marginBottom: '6px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '10px'
+                  gap: '8px'
                 }}>
                   ✏️ Editar Questão
                 </div>
@@ -1814,9 +2460,9 @@ ${pasteText}`;
                     const origem = getOrigemQuestao(editingQuestion);
                     return (
                       <span style={{
-                        padding: '4px 10px',
-                        borderRadius: '20px',
-                        fontSize: '11px',
+                        padding: '3px 8px',
+                        borderRadius: '12px',
+                        fontSize: '10px',
                         fontWeight: 600,
                         background: origem.cor,
                         color: origem.tipo === 'gemini' ? '#000' : '#fff'
@@ -1827,9 +2473,9 @@ ${pasteText}`;
                   })()}
                   {editingQuestion.disciplina && (
                     <span style={{
-                      padding: '4px 10px',
-                      borderRadius: '20px',
-                      fontSize: '11px',
+                      padding: '3px 8px',
+                      borderRadius: '12px',
+                      fontSize: '10px',
                       fontWeight: 600,
                       background: 'var(--acc)',
                       color: '#fff'
@@ -1845,14 +2491,13 @@ ${pasteText}`;
                   background: 'var(--surf2)',
                   border: 'none',
                   borderRadius: '50%',
-                  width: '36px',
-                  height: '36px',
+                  width: '28px',
+                  height: '28px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '18px',
-                  transition: 'all 0.2s ease'
+                  fontSize: '14px'
                 }}
                 onMouseEnter={(e) => e.target.style.background = 'var(--err)'}
                 onMouseLeave={(e) => e.target.style.background = 'var(--surf2)'}
@@ -1861,30 +2506,28 @@ ${pasteText}`;
               </button>
             </div>
 
-            <form onSubmit={handleUpdateQuestion}>
+            <form onSubmit={handleUpdateQuestion} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
               {/* Card: Enunciado com toggle */}
               <div style={{
                 background: 'var(--surf1)',
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '16px',
+                borderRadius: '8px',
+                padding: '10px',
+                marginBottom: '10px',
                 border: '1px solid var(--brd)'
               }}>
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  marginBottom: showEnunciado ? '12px' : '0'
+                  marginBottom: showEnunciado ? '8px' : '0'
                 }}>
                   <label style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
-                    gap: '6px',
-                    fontSize: '12px', 
+                    gap: '4px',
+                    fontSize: '11px', 
                     fontWeight: 600, 
-                    color: 'var(--txt)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    color: 'var(--txt)'
                   }}>
                     📝 Enunciado
                   </label>
@@ -1892,19 +2535,18 @@ ${pasteText}`;
                     type="button"
                     onClick={() => setShowEnunciado(!showEnunciado)}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: '20px',
-                      border: '2px solid',
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      border: '1px solid',
                       borderColor: showEnunciado ? 'var(--txt)' : 'var(--brd)',
                       background: showEnunciado ? 'var(--bg)' : 'transparent',
                       color: 'var(--txt)',
-                      fontSize: '12px',
+                      fontSize: '11px',
                       fontWeight: 600,
                       cursor: 'pointer',
-                      transition: 'all 0.2s ease',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px'
+                      gap: '4px'
                     }}
                   >
                     {showEnunciado ? '📥 Recolher' : '📤 Expandir'}
@@ -1918,14 +2560,14 @@ ${pasteText}`;
                     required
                     style={{
                       width: '100%',
-                      minHeight: '120px',
-                      padding: '12px',
-                      borderRadius: '8px',
+                      minHeight: '80px',
+                      padding: '8px',
+                      borderRadius: '6px',
                       border: '1px solid var(--brd)',
                       background: 'var(--bg)',
                       color: 'var(--txt)',
-                      fontSize: '14px',
-                      lineHeight: '1.6',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
                       resize: 'vertical',
                       fontFamily: 'inherit'
                     }}
@@ -1933,28 +2575,26 @@ ${pasteText}`;
                 )}
               </div>
 
-              {/* Grid: Classificação */}
+              {/* Grid: Classificação - 4 colunas */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                gap: '12px',
-                marginBottom: '16px'
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '10px',
+                marginBottom: '10px'
               }}>
                 {/* Disciplina */}
                 <div style={{
                   background: 'var(--surf1)',
-                  borderRadius: '12px',
-                  padding: '14px',
+                  borderRadius: '8px',
+                  padding: '10px',
                   border: '1px solid var(--brd)'
                 }}>
                   <label style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     fontWeight: 600,
                     color: 'var(--mut)',
-                    marginBottom: '8px',
-                    display: 'block',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    marginBottom: '6px',
+                    display: 'block'
                   }}>
                     📚 Disciplina *
                   </label>
@@ -1968,12 +2608,12 @@ ${pasteText}`;
                     required
                     style={{
                       width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
                       border: '1px solid var(--brd)',
                       background: 'var(--bg)',
                       color: 'var(--txt)',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: 'pointer'
                     }}
                   >
@@ -1987,18 +2627,16 @@ ${pasteText}`;
                 {/* Tópico */}
                 <div style={{
                   background: 'var(--surf1)',
-                  borderRadius: '12px',
-                  padding: '14px',
+                  borderRadius: '8px',
+                  padding: '10px',
                   border: '1px solid var(--brd)'
                 }}>
                   <label style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     fontWeight: 600,
                     color: 'var(--mut)',
-                    marginBottom: '8px',
-                    display: 'block',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    marginBottom: '6px',
+                    display: 'block'
                   }}>
                     🏷️ Tópico
                   </label>
@@ -2008,12 +2646,12 @@ ${pasteText}`;
                     disabled={!editingQuestion.disciplina}
                     style={{
                       width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
                       border: '1px solid var(--brd)',
                       background: editingQuestion.disciplina ? 'var(--bg)' : 'var(--surf2)',
                       color: 'var(--txt)',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: editingQuestion.disciplina ? 'pointer' : 'not-allowed'
                     }}
                   >
@@ -2029,22 +2667,20 @@ ${pasteText}`;
                 {/* Gabarito com toggle */}
                 <div style={{
                   background: 'var(--surf1)',
-                  borderRadius: '12px',
-                  padding: '14px',
+                  borderRadius: '8px',
+                  padding: '10px',
                   border: '1px solid var(--brd)'
                 }}>
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    marginBottom: showGabarito ? '12px' : '0'
+                    marginBottom: showGabarito ? '8px' : '0'
                   }}>
                     <label style={{
-                      fontSize: '11px',
+                      fontSize: '10px',
                       fontWeight: 600,
-                      color: 'var(--mut)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px'
+                      color: 'var(--mut)'
                     }}>
                       ✅ Gabarito
                     </label>
@@ -2052,29 +2688,25 @@ ${pasteText}`;
                       type="button"
                       onClick={() => setShowGabarito(!showGabarito)}
                       style={{
-                        padding: '6px 14px',
-                        borderRadius: '20px',
-                        border: '2px solid',
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        border: '1px solid',
                         borderColor: showGabarito ? 'var(--pri)' : 'var(--brd)',
                         background: showGabarito ? 'var(--pri)' : 'transparent',
                         color: showGabarito ? '#000' : 'var(--txt)',
-                        fontSize: '11px',
+                        fontSize: '10px',
                         fontWeight: 600,
                         cursor: 'pointer',
-                        transition: 'all 0.2s ease',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px'
+                        gap: '4px'
                       }}
                     >
                       {showGabarito ? '🙈 Ocultar' : '👁️ Revelar'}
                     </button>
                   </div>
                   {showGabarito && (
-                    <div style={{
-                      display: 'flex',
-                      gap: '6px'
-                    }}>
+                    <div style={{ display: 'flex', gap: '4px' }}>
                       {['A', 'B', 'C', 'D', 'E'].map((letra) => (
                         <button
                           key={letra}
@@ -2082,16 +2714,15 @@ ${pasteText}`;
                           onClick={() => setEditingQuestion(prev => ({ ...prev, respostaCorreta: letra }))}
                           style={{
                             flex: 1,
-                            padding: '10px',
-                            borderRadius: '8px',
+                            padding: '6px',
+                            borderRadius: '6px',
                             border: '2px solid',
                             borderColor: editingQuestion.respostaCorreta === letra ? 'var(--pri)' : 'var(--brd)',
                             background: editingQuestion.respostaCorreta === letra ? 'var(--pri)' : 'var(--bg)',
                             color: editingQuestion.respostaCorreta === letra ? '#000' : 'var(--txt)',
                             fontWeight: 700,
-                            fontSize: '14px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
+                            fontSize: '12px',
+                            cursor: 'pointer'
                           }}
                         >
                           {letra}
@@ -2104,18 +2735,16 @@ ${pasteText}`;
                 {/* Fonte */}
                 <div style={{
                   background: 'var(--surf1)',
-                  borderRadius: '12px',
-                  padding: '14px',
+                  borderRadius: '8px',
+                  padding: '10px',
                   border: '1px solid var(--brd)'
                 }}>
                   <label style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     fontWeight: 600,
                     color: 'var(--mut)',
-                    marginBottom: '8px',
-                    display: 'block',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    marginBottom: '6px',
+                    display: 'block'
                   }}>
                     📖 Fonte
                   </label>
@@ -2126,247 +2755,259 @@ ${pasteText}`;
                     placeholder="Ex: Banca XYZ - 2023"
                     style={{
                       width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
                       border: '1px solid var(--brd)',
                       background: 'var(--bg)',
                       color: 'var(--txt)',
-                      fontSize: '13px'
+                      fontSize: '12px'
                     }}
                   />
                 </div>
               </div>
 
-              {/* Card: Alternativas com toggle para mostrar resposta */}
+              {/* Layout de 2 colunas: Alternativas + Explicação */}
               <div style={{
-                background: 'var(--surf1)',
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '16px',
-                border: '1px solid var(--brd)'
+                display: 'grid',
+                gridTemplateColumns: '1.2fr 0.8fr',
+                gap: '10px',
+                marginBottom: '10px',
+                flex: 1,
+                minHeight: 0
               }}>
+                {/* Card: Alternativas com toggle para mostrar resposta */}
                 <div style={{
+                  background: 'var(--surf1)',
+                  borderRadius: '8px',
+                  padding: '10px',
+                  border: '1px solid var(--brd)',
+                  height: '100%',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '12px'
+                  flexDirection: 'column'
                 }}>
-                  <label style={{
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: 'var(--txt)',
+                  <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    justifyContent: 'space-between',
+                    marginBottom: '8px'
                   }}>
-                    🔤 Alternativas
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowRespostaCorreta(!showRespostaCorreta)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '20px',
-                      border: '2px solid',
-                      borderColor: showRespostaCorreta ? 'var(--pri)' : 'var(--brd)',
-                      background: showRespostaCorreta ? 'var(--pri)' : 'transparent',
-                      color: showRespostaCorreta ? '#000' : 'var(--txt)',
-                      fontSize: '12px',
+                    <label style={{
+                      fontSize: '11px',
                       fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
+                      color: 'var(--txt)',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    {showRespostaCorreta ? '🙈 Ocultar' : '👁️ Revelar'} Resposta
-                  </button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {editingQuestion.alternativas?.map((alt) => (
-                    <div 
-                      key={alt.letra} 
+                      gap: '4px'
+                    }}>
+                      🔤 Alternativas
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowRespostaCorreta(!showRespostaCorreta)}
                       style={{
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        border: '1px solid',
+                        borderColor: showRespostaCorreta ? 'var(--pri)' : 'var(--brd)',
+                        background: showRespostaCorreta ? 'var(--pri)' : 'transparent',
+                        color: showRespostaCorreta ? '#000' : 'var(--txt)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '12px',
-                        padding: '10px 14px',
-                        borderRadius: '10px',
-                        background: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra)
-                          ? 'rgba(74, 222, 128, 0.15)' 
-                          : 'var(--bg)',
-                        border: `2px solid ${(showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? 'var(--pri)' : 'var(--brd)'}`,
-                        transition: 'all 0.2s ease'
+                        gap: '4px'
                       }}
                     >
-                      <span 
-                        style={{ 
-                          width: '32px', 
-                          height: '32px', 
-                          borderRadius: '50%', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center',
-                          fontWeight: 700,
-                          fontSize: '14px',
-                          background: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? 'var(--pri)' : 'var(--surf2)',
-                          color: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? '#000' : 'var(--txt)',
-                          flexShrink: 0
+                      {showRespostaCorreta ? '🙈 Ocultar' : '👁️ Revelar'} Resposta
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                    {editingQuestion.alternativas?.map((alt) => (
+                      <div 
+                        key={alt.letra} 
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          background: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra)
+                            ? 'rgba(74, 222, 128, 0.15)' 
+                            : 'var(--bg)',
+                          border: `1px solid ${(showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? 'var(--pri)' : 'var(--brd)'}`
                         }}
                       >
-                        {alt.letra}
-                      </span>
-                      <input
-                        type="text"
-                        value={alt.texto}
-                        onChange={(e) => updateEditingAlternativa(alt.letra, e.target.value)}
-                        placeholder={`Texto da alternativa ${alt.letra}`}
-                        required={alt.letra === 'A' || alt.letra === 'B'}
-                        style={{
-                          flex: 1,
-                          padding: '8px 0',
-                          border: 'none',
-                          background: 'transparent',
-                          color: 'var(--txt)',
-                          fontSize: '14px',
-                          outline: 'none'
-                        }}
-                      />
-                      {(showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) && (
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: 'var(--pri)',
-                          padding: '4px 8px',
-                          background: 'rgba(74, 222, 128, 0.2)',
-                          borderRadius: '4px'
-                        }}>
-                          ✓ CORRETA
+                        <span 
+                          style={{ 
+                            width: '26px', 
+                            height: '26px', 
+                            borderRadius: '50%', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            background: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? 'var(--pri)' : 'var(--surf2)',
+                            color: (showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) ? '#000' : 'var(--txt)',
+                            flexShrink: 0
+                          }}
+                        >
+                          {alt.letra}
                         </span>
-                      )}
-                    </div>
-                  ))}
+                        <input
+                          type="text"
+                          value={alt.texto}
+                          onChange={(e) => updateEditingAlternativa(alt.letra, e.target.value)}
+                          placeholder={`Texto da alternativa ${alt.letra}`}
+                          required={alt.letra === 'A' || alt.letra === 'B'}
+                          style={{
+                            flex: 1,
+                            padding: '4px 0',
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--txt)',
+                            fontSize: '12px',
+                            outline: 'none'
+                          }}
+                        />
+                        {(showRespostaCorreta && editingQuestion.respostaCorreta === alt.letra) && (
+                          <span style={{
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: 'var(--pri)',
+                            padding: '2px 6px',
+                            background: 'rgba(74, 222, 128, 0.2)',
+                            borderRadius: '4px'
+                          }}>
+                            ✓
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {/* Card: Explicação com toggle */}
-              <div style={{
-                background: 'var(--surf1)',
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '20px',
-                border: '1px solid var(--brd)'
-              }}>
+                {/* Card: Explicação com toggle */}
                 <div style={{
+                  background: 'var(--surf1)',
+                  borderRadius: '8px',
+                  padding: '10px',
+                  border: '1px solid var(--brd)',
+                  height: '100%',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: showExplicacao ? '12px' : '0'
+                  flexDirection: 'column'
                 }}>
-                  <label style={{
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: 'var(--txt)',
+                  <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    justifyContent: 'space-between',
+                    marginBottom: showExplicacao ? '8px' : '0'
                   }}>
-                    💡 Explicação / Gabarito Comentado
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowExplicacao(!showExplicacao)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '20px',
-                      border: '2px solid',
-                      borderColor: showExplicacao ? 'var(--acc)' : 'var(--brd)',
-                      background: showExplicacao ? 'var(--acc)' : 'transparent',
-                      color: showExplicacao ? '#fff' : 'var(--txt)',
-                      fontSize: '12px',
+                    <label style={{
+                      fontSize: '11px',
                       fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
+                      color: 'var(--txt)',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    {showExplicacao ? '🙈 Ocultar' : '👁️ Revelar'} Explicação
-                  </button>
+                      gap: '4px'
+                    }}>
+                      💡 Explicação
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowExplicacao(!showExplicacao)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        border: '1px solid',
+                        borderColor: showExplicacao ? 'var(--acc)' : 'var(--brd)',
+                        background: showExplicacao ? 'var(--acc)' : 'transparent',
+                        color: showExplicacao ? '#fff' : 'var(--txt)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      {showExplicacao ? '🙈 Ocultar' : '👁️ Revelar'} Explicação
+                    </button>
+                  </div>
+                  {showExplicacao && (
+                    <textarea
+                      value={editingQuestion.explicacao}
+                      onChange={(e) => setEditingQuestion(prev => ({ ...prev, explicacao: e.target.value }))}
+                      placeholder="Explique a resposta correta..."
+                      style={{
+                        width: '100%',
+                        flex: 1,
+                        minHeight: '100px',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--brd)',
+                        background: 'var(--bg)',
+                        color: 'var(--txt)',
+                        fontSize: '12px',
+                        lineHeight: '1.5',
+                        resize: 'none',
+                        fontFamily: 'inherit'
+                      }}
+                    />
+                  )}
                 </div>
-                {showExplicacao && (
-                  <textarea
-                    value={editingQuestion.explicacao}
-                    onChange={(e) => setEditingQuestion(prev => ({ ...prev, explicacao: e.target.value }))}
-                    placeholder="Explique a resposta correta..."
-                    style={{
-                      width: '100%',
-                      minHeight: '100px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--brd)',
-                      background: 'var(--bg)',
-                      color: 'var(--txt)',
-                      fontSize: '13px',
-                      lineHeight: '1.6',
-                      resize: 'vertical',
-                      fontFamily: 'inherit'
-                    }}
-                  />
-                )}
               </div>
 
-              {/* Histórico da Questão - Estilo Timeline */}
+              {/* Histórico da Questão - Layout horizontal */}
               {editingQuestion.historico && editingQuestion.historico.length > 0 && (
                 <div style={{
-                  marginBottom: '24px',
-                  padding: '16px',
+                  marginBottom: '10px',
+                  padding: '10px',
                   background: 'var(--surf1)',
-                  borderRadius: '12px',
+                  borderRadius: '8px',
                   border: '1px solid var(--brd)'
                 }}>
                   <label style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     fontWeight: 600,
                     color: 'var(--mut)',
-                    marginBottom: '12px',
+                    marginBottom: '8px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    gap: '4px'
                   }}>
-                    📅 Histórico de Alterações
+                    📅 Histórico
                   </label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {editingQuestion.historico.map((h, i) => (
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'row', 
+                    flexWrap: 'wrap',
+                    gap: '6px' 
+                  }}>
+                    {editingQuestion.historico.slice(0, 5).map((h, i) => (
                       <div 
                         key={i} 
                         style={{ 
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '10px',
-                          fontSize: '12px',
-                          padding: '8px 12px',
+                          gap: '6px',
+                          fontSize: '10px',
+                          padding: '4px 8px',
                           background: 'var(--bg)',
-                          borderRadius: '8px'
+                          borderRadius: '6px'
                         }}
                       >
                         <span style={{
-                          padding: '4px 8px',
+                          padding: '2px 6px',
                           borderRadius: '4px',
-                          fontSize: '10px',
+                          fontSize: '9px',
                           fontWeight: 700,
                           background: h.tipo === 'criacao' ? 'var(--pri)' : h.tipo === 'importacao' ? 'var(--acc)' : 'var(--warn)',
-                          color: h.tipo === 'criacao' || h.tipo === 'importacao' ? '#000' : '#fff'
+                          color: h.tipo === 'criacao' || h.tipo === 'importacao' ? '#000' : '#fff',
+                          whiteSpace: 'nowrap'
                         }}>
-                          {h.tipo === 'criacao' ? 'CRIADA' : h.tipo === 'importacao' ? 'IMPORTADA' : 'EDITADA'}
+                          {h.tipo === 'criacao' ? 'CRIADA' : h.tipo === 'importacao' ? 'IMPORT' : 'EDIT'}
                         </span>
                         <span style={{ color: 'var(--txt)' }}>
                           {h.dataFormatada || formatarData(h.dataISO)}
@@ -2385,24 +3026,24 @@ ${pasteText}`;
               {/* Botões de Ação - Fixos no rodapé */}
               <div style={{
                 display: 'flex',
-                gap: '12px',
+                gap: '8px',
                 justifyContent: 'flex-end',
-                paddingTop: '16px',
-                borderTop: '1px solid var(--brd)'
+                paddingTop: '10px',
+                borderTop: '1px solid var(--brd)',
+                marginTop: 'auto'
               }}>
                 <button 
                   type="button" 
                   onClick={closeEditModal}
                   style={{
-                    padding: '12px 24px',
-                    borderRadius: '10px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
                     border: '1px solid var(--brd)',
                     background: 'var(--surf2)',
                     color: 'var(--txt)',
-                    fontSize: '14px',
+                    fontSize: '12px',
                     fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
+                    cursor: 'pointer'
                   }}
                 >
                   Cancelar
@@ -2410,22 +3051,20 @@ ${pasteText}`;
                 <button 
                   type="submit" 
                   style={{
-                    padding: '12px 28px',
-                    borderRadius: '10px',
+                    padding: '8px 20px',
+                    borderRadius: '8px',
                     border: 'none',
                     background: 'var(--pri)',
                     color: '#000',
-                    fontSize: '14px',
+                    fontSize: '12px',
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.2s ease',
-                    boxShadow: '0 4px 12px rgba(74, 222, 128, 0.3)'
+                    gap: '6px'
                   }}
                 >
-                  💾 Salvar Alterações
+                  💾 Salvar
                 </button>
               </div>
             </form>

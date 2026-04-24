@@ -140,7 +140,7 @@ export const EDITAL_ESTRUTURA = {
       'Lei nº 14.133/2021 (Lei de Licitações e Contratos)'
     ]
   },
-  'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO': {
+  'Legislação e Código de Ética do MP-ES': {
     descricao: 'Legislação específica do MPES, Lei Orgânica, Constituição Estadual, LGPD, Código de Ética e planejamento estratégico',
     topicos: [
       '1. Lei Orgânica do MPES - LC 95/1997 (Título I, Capítulos I e II)',
@@ -163,7 +163,7 @@ export const MODULOS = {
     nome: 'Módulo 1 - Legislação MPES',
     descricao: 'Legislação específica do Ministério Público do ES',
     disciplinas: [
-      'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO'
+      'Legislação e Código de Ética do MP-ES'
     ]
   },
   'Módulo 2': {
@@ -540,12 +540,12 @@ export function encontrarDisciplinaProxima(texto) {
     'contrato administrativo': 'Legislação e Aspectos Éticos',
     
     // Legislação MPES
-    'mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'ministerio publico es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'legislacao mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'codigo de etica mp': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'lei organica mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'constituicao es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO'
+    'mpes': 'Legislação e Código de Ética do MP-ES',
+    'ministerio publico es': 'Legislação e Código de Ética do MP-ES',
+    'legislacao mpes': 'Legislação e Código de Ética do MP-ES',
+    'codigo de etica mp': 'Legislação e Código de Ética do MP-ES',
+    'lei organica mpes': 'Legislação e Código de Ética do MP-ES',
+    'constituicao es': 'Legislação e Código de Ética do MP-ES'
   };
   
   for (const [termo, disciplina] of Object.entries(mapeamentos)) {
@@ -694,13 +694,13 @@ export function normalizarDisciplina(disciplina) {
     'contrato': 'Legislação e Aspectos Éticos',
     
     // Legislação MPES
-    'mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'ministerio publico': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'ministerio publico es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'legislacao mp': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'lei organica mpes': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'constituicao es': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO',
-    'resolucao cnmp': 'LEGISLAÇÃO E CÓDIGO DE ÉTICA DO MINISTÉRIO PÚBLICO DO ESTADO DO ESPÍRITO SANTO'
+    'mpes': 'Legislação e Código de Ética do MP-ES',
+    'ministerio publico': 'Legislação e Código de Ética do MP-ES',
+    'ministerio publico es': 'Legislação e Código de Ética do MP-ES',
+    'legislacao mp': 'Legislação e Código de Ética do MP-ES',
+    'lei organica mpes': 'Legislação e Código de Ética do MP-ES',
+    'constituicao es': 'Legislação e Código de Ética do MP-ES',
+    'resolucao cnmp': 'Legislação e Código de Ética do MP-ES'
   };
   
   // Verifica mapeamento

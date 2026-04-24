@@ -27,6 +27,12 @@ const Config = () => {
         console.error('Erro ao carregar config:', e);
       }
     }
+    
+    // Carregar tema salvo
+    const savedTheme = localStorage.getItem('studypro_theme');
+    if (savedTheme) {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    }
   }, []);
 
   const [apiKey, setApiKey] = useState(config?.geminiKey || '');
@@ -44,7 +50,8 @@ const Config = () => {
 
   const handleSaveApiKey = () => {
     localStorage.setItem('gemini_key', apiKey);
-    setSaveStatus('✅ Salvo!');
+    updateConfig({ geminiKey: apiKey });
+    setSaveStatus('✅ Gemini salvo!');
     setTimeout(() => setSaveStatus(''), 2000);
   };
 
@@ -73,13 +80,13 @@ const Config = () => {
     <div style={{ maxWidth: '600px' }}>
       {/* API Key Gemini */}
       <div className="card mb16">
-        <div className="card-title">🔑 API Key — Gemini</div>
+        <div className="card-title">🔑 API Key — Gemini (Google)</div>
         <div className="note warn mb16">
-          ⚠️ Necessária para extrair questões de PDF. 
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{color:'var(--acc)'}}>Obter chave gratuita →</a>
+          ⚠️ Necessária para extrair questões de PDF com Gemini. 
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style={{color:'var(--acc)'}}>Obter chave gratuita →</a>
         </div>
         <div className="fg">
-          <label className="flbl">Chave</label>
+          <label className="flbl">Chave Gemini</label>
           <div className="flex ac gap8">
             <input
               className="finp"
@@ -106,9 +113,16 @@ const Config = () => {
 
       <div className="card mb16">
         <div className="card-title">🎨 Tema</div>
-        <div className="flex gap8">
-          <button className="btn btn-sec" onClick={() => setTheme('dark')}>🌙 Escuro</button>
-          <button className="btn btn-sec" onClick={() => setTheme('light')}>☀️ Claro</button>
+        <div className="g2" style={{gap: '8px'}}>
+          <button className="btn btn-sec" onClick={() => setTheme('dark')} style={{fontSize: '11px'}}>🌙 Padrão Escuro</button>
+          <button className="btn btn-sec" onClick={() => setTheme('light')} style={{fontSize: '11px'}}>☀️ Padrão Claro</button>
+          <button className="btn btn-sec" onClick={() => setTheme('glass')} style={{fontSize: '11px', background: 'rgba(96,165,250,.2)', borderColor: '#60a5fa', color: '#60a5fa'}}>🧊 Glassmorphism</button>
+          <button className="btn btn-sec" onClick={() => setTheme('cyberpunk')} style={{fontSize: '11px', background: 'rgba(0,240,255,.15)', borderColor: '#00f0ff', color: '#00f0ff'}}>⚡ Cyberpunk</button>
+          <button className="btn btn-sec" onClick={() => setTheme('minimal')} style={{fontSize: '11px', background: 'rgba(99,102,241,.12)', borderColor: '#6366f1', color: '#6366f1'}}>☁️ Minimalista</button>
+          <button className="btn btn-sec" onClick={() => setTheme('space')} style={{fontSize: '11px', background: 'rgba(167,139,250,.15)', borderColor: '#a78bfa', color: '#a78bfa'}}>🌌 Deep Space</button>
+          <button className="btn btn-sec" onClick={() => setTheme('ocean')} style={{fontSize: '11px', background: 'rgba(14,165,233,.15)', borderColor: '#0ea5e9', color: '#0ea5e9'}}>🌊 Ocean</button>
+          <button className="btn btn-sec" onClick={() => setTheme('yellow')} style={{fontSize: '11px', background: 'rgba(250,204,21,.15)', borderColor: '#facc15', color: '#facc15'}}>⚡ Amarelo</button>
+          <button className="btn btn-sec" onClick={() => setTheme('black')} style={{fontSize: '11px', background: '#0a0a0a', borderColor: '#404040', color: '#fafafa'}}>⚫ Preto</button>
         </div>
       </div>
 

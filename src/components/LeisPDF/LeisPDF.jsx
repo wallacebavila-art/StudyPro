@@ -96,24 +96,35 @@ const LeisPDF = () => {
         );
       }
 
+      // Gerar ID único para Leis PDF
+      const gerarIdLeis = () => {
+        return `Leis-${Date.now()}${Math.floor(Math.random() * 1000000)}`;
+      };
+
       // Normalizar questões
-      const questoesNormalizadas = questoes.map((q, index) => ({
-        id: `fgv_${Date.now()}_${index}`,
-        createdAt: new Date().toISOString(),
-        enunciado: (q.enunciado || '').trim(),
-        alternativas: (q.alternativas || []).map(a => ({
-          letra: (a.letra || '').toUpperCase().trim(),
-          texto: (a.texto || '').trim()
-        })).filter(a => a.letra && a.texto),
-        respostaCorreta: (q.respostaCorreta || q.gabarito || 'A').toUpperCase().trim().charAt(0),
-        explicacao: (q.explicacao || q.comentario || '').trim(),
-        disciplina: normalizarDisciplina(disciplina),
-        topico: topico ? normalizarTopico(topico) : '',
-        fonte: `Gerado de PDF - Estilo FGV`,
-        geradoIA: true,
-        estiloFGV: true,
-        legislacaoBase: modoEntrada === 'pdf' ? selectedFile?.name : 'Texto colado'
-      }));
+      const questoesNormalizadas = questoes.map((q, index) => {
+        // Adicionar identificador Leis-xxxxxx ao enunciado
+        const idLeis = gerarIdLeis();
+        const enunciadoComId = `[${idLeis}] ${(q.enunciado || '').trim()}`;
+
+        return {
+          id: `fgv_${Date.now()}_${index}`,
+          createdAt: new Date().toISOString(),
+          enunciado: enunciadoComId,
+          alternativas: (q.alternativas || []).map(a => ({
+            letra: (a.letra || '').toUpperCase().trim(),
+            texto: (a.texto || '').trim()
+          })).filter(a => a.letra && a.texto),
+          respostaCorreta: (q.respostaCorreta || q.gabarito || 'A').toUpperCase().trim().charAt(0),
+          explicacao: (q.explicacao || q.comentario || '').trim(),
+          disciplina: normalizarDisciplina(disciplina),
+          topico: topico ? normalizarTopico(topico) : '',
+          fonte: `Gerado de PDF - Estilo FGV`,
+          geradoIA: true,
+          estiloFGV: true,
+          legislacaoBase: modoEntrada === 'pdf' ? selectedFile?.name : 'Texto colado'
+        };
+      });
 
       setQuestoesGeradas(questoesNormalizadas);
       setStatus(`✅ ${questoesNormalizadas.length} questão(ões) gerada(s) no estilo FGV!`);

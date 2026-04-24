@@ -28,16 +28,6 @@ const Dashboard = () => {
     return { totalQuestions, totalSimulados, avgAcerto, totalErrors };
   }, [questions, simulados]);
 
-  const chartData = useMemo(() => {
-    const byDisc = {};
-    Object.values(questions || {}).forEach(q => {
-      if (q.disciplina) {
-        byDisc[q.disciplina] = (byDisc[q.disciplina] || 0) + 1;
-      }
-    });
-    return Object.entries(byDisc).slice(0, 10);
-  }, [questions]);
-
   const recentSims = useMemo(() => {
     return Object.values(simulados || {})
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -70,10 +60,6 @@ const Dashboard = () => {
       </div>
 
       <div className="g2">
-        <div className="card">
-          <div className="card-title">📊 Questões por Disciplina</div>
-          <canvas id="chart-disc" height="200"></canvas>
-        </div>
         <div className="card">
           <div className="card-title">📅 Últimos Simulados</div>
           <div id="dash-sims">

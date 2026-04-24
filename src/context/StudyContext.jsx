@@ -7,7 +7,9 @@ const StudyContext = createContext();
 const initialState = {
   questions: {},
   simulados: {},
-  config: { geminiKey: '' },
+  config: { 
+    geminiKey: localStorage.getItem('geminiKey') || ''
+  },
   flashcards_custom: {},
   fc_progress: {},
   isOnline: navigator.onLine,
@@ -47,12 +49,18 @@ export const StudyProvider = ({ children }) => {
           firebaseService.get('fc_progress').catch(() => ({}))
         ]);
 
+        // Mergear config do Firebase com API keys do localStorage
+        const mergedConfig = {
+          ...config,
+          geminiKey: config?.geminiKey || localStorage.getItem('gemini_key') || ''
+        };
+
         dispatch({
           type: 'UPDATE_DATA',
           payload: {
             questions,
             simulados,
-            config,
+            config: mergedConfig,
             flashcards_custom: flashcards,
             fc_progress: progress
           }
