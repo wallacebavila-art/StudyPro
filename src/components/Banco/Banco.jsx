@@ -314,8 +314,129 @@ const Banco = () => {
     }));
   };
 
+  // Parser local para questões no formato FGV padronizado
+  const parseQuestaoPadronizada = (texto) => {
+    // Padrão: número. [QXXXXXXX] enunciado
+    const enunciadoMatch = texto.match(/^\d+\.\s*\[?(Q\d+)\]?\s*(.+?)(?=\n\s*[a-e]\s*[)\.])/is);
+    if (!enunciadoMatch) return null;
+
+    const questaoId = enunciadoMatch[1];
+    const enunciado = enunciadoMatch[2].trim();
+
+    // Extrair alternativas: a ) texto, b ) texto, etc.
+    const alternativas = [];
+    const letras = ['a', 'b', 'c', 'd', 'e'];
+    
+    for (const letra of letras) {
+      // Padrão: a ) texto ou a. texto ou a) texto (até a próxima alternativa ou fim)
+      const regex = new RegExp(`\\n\\s*${letra}\\s*[)\\.]\\s*([^\\n]*(?:\\n(?![\\s]*[a-e]\\s*[)\\.])[^\\n]*)*)`, 'i');
+      const match = texto.match(regex);
+      if (match) {
+        const textoAlt = match[1].trim().replace(/\n\s+/g, ' ');
+        alternativas.push({ letra: letra.toUpperCase(), texto: textoAlt });
+      }
+    }
+
+    if (alternativas.length === 0) return null;
+
+    // Extrair disciplina/tópico
+    const disciplinaMatch = texto.match(/Disciplinas?\/Assuntos?\s*vinculados?:\s*(.+?)(?=\nFonte:|$)/i);
+    let disciplina = '';
+    let topico = '';
+    
+    if (disciplinaMatch) {
+      const linha = disciplinaMatch[1].trim();
+      // Formato: Disciplina > Tópico > Subtópico
+      const partes = linha.split(/>/).map(p => p.trim());
+      disciplina = partes[0] || '';
+      topico = partes.slice(1).join(' > ') || '';
+    }
+
+    // Extrair fonte
+    const fonteMatch = texto.match(/Fonte:\s*(.+?)(?=\n|$)/i);
+    const fonte = fonteMatch ? fonteMatch[1].trim() : '';
+
+    // Parse da fonte para extrair banca, ano, órgão, cargo
+    const parsedFonte = parseFontePadronizada(fonte);
+
+    return {
+      id: questaoId,
+      enunciado: `[${questaoId}] ${enunciado}`,
+      alternativas,
+      respostaCorreta: '', // Não tem gabarito visível nesse formato
+      disciplina,
+      topico,
+      explicacao: '',
+      fonte: parsedFonte.textoCompleto || fonte,
+      banca: parsedFonte.banca,
+      orgao: parsedFonte.orgao,
+      ano: parsedFonte.ano,
+      cargo: parsedFonte.cargo
+    };
+  };
+
+  // Parse da linha de fonte (ex: "Fundação Getúlio Vargas - FGV 2026 / Tribunal de Justiça...")
+  const parseFontePadronizada = (fonte) => {
+    if (!fonte) return {};
+
+    // Padrões comuns
+    const resultado = { textoCompleto: fonte };
+
+    // Banca: palavras como FGV, CESPE, VUNESP, AOCP, etc.
+    const bancas = ['FGV', 'CESPE', 'CEBRASPE', 'VUNESP', 'AOCP', 'FCC', 'IBFC', 'QUADRIX'];
+    for (const b of bancas) {
+      if (fonte.toUpperCase().includes(b)) {
+        resultado.banca = b === 'CESPE' ? 'CESPE/CEBRASPE' : b;
+        break;
+      }
+    }
+
+    // Ano: 4 dígitos entre 1990-2030
+    const anoMatch = fonte.match(/\b(19\d{2}|20\d{2})\b/);
+    if (anoMatch) resultado.ano = anoMatch[1];
+
+    // Órgão: após o ano, geralmente vem o órgão
+    const orgaoMatch = fonte.match(/\d{4}\s*\/\s*([^/]+)/);
+    if (orgaoMatch) resultado.orgao = orgaoMatch[1].trim();
+
+    // Cargo: após o órgão
+    const cargoMatch = fonte.match(/Analista[^/]+|Técnico[^/]+|Assistente[^/]+/i);
+    if (cargoMatch) resultado.cargo = cargoMatch[0].trim();
+
+    return resultado;
+  };
+
   const processPasteWithAI = async () => {
     if (!pasteText.trim()) return;
+
+    // Primeiro, tentar parser local para formato padronizado
+    const parseLocal = parseQuestaoPadronizada(pasteText);
+    if (parseLocal) {
+      setNewQuestion({
+        enunciado: parseLocal.enunciado,
+        disciplina: parseLocal.disciplina,
+        topico: parseLocal.topico,
+        respostaCorreta: parseLocal.respostaCorreta,
+        alternativas: parseLocal.alternativas.length === 5 
+          ? parseLocal.alternativas 
+          : [
+              { letra: 'A', texto: parseLocal.alternativas[0]?.texto || '' },
+              { letra: 'B', texto: parseLocal.alternativas[1]?.texto || '' },
+              { letra: 'C', texto: parseLocal.alternativas[2]?.texto || '' },
+              { letra: 'D', texto: parseLocal.alternativas[3]?.texto || '' },
+              { letra: 'E', texto: parseLocal.alternativas[4]?.texto || '' }
+            ],
+        explicacao: parseLocal.explicacao,
+        fonte: parseLocal.fonte,
+        banca: parseLocal.banca,
+        orgao: parseLocal.orgao,
+        ano: parseLocal.ano,
+        cargo: parseLocal.cargo
+      });
+      setAddMode('manual');
+      alert('✅ Questão parseada automaticamente do formato FGV!');
+      return;
+    }
     
     const apiKey = config?.geminiKey;
     if (!apiKey) {
@@ -346,7 +467,7 @@ const Banco = () => {
 Texto para analisar:
 ${pasteText}`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -583,13 +704,10 @@ ${pasteText}`;
     return duplicatasAceitas.has(`${q1Id}_${q2Id}`) || duplicatasAceitas.has(`${q2Id}_${q1Id}`);
   };
 
-  // Determinar origem da questão (Gemini, Parser ou Manual)
+  // Determinar origem da questão (Gemini ou Manual)
   const getOrigemQuestao = (q) => {
     if (q.geradoIA) {
       return { tipo: 'gemini', label: '🤖 Gemini', cor: 'var(--warn)' };
-    }
-    if (q._metodo === 'parser-local') {
-      return { tipo: 'parser', label: '📄 Parser', cor: '#60a5fa' };
     }
     return { tipo: 'manual', label: '✏️ Manual', cor: '#4ade80' };
   };
@@ -1989,7 +2107,7 @@ ${pasteText}`;
                   <div>
                     <span style={{ color: 'var(--mut)' }}>🤖 Origem:</span>
                     <div style={{ fontWeight: 500 }}>
-                      {duplicataComparacao.q1.geradoIA ? 'Gerado por IA' : duplicataComparacao.q1._metodo === 'parser-local' ? 'Parser Local' : 'Manual'}
+                      {duplicataComparacao.q1.geradoIA ? 'Gerado por IA' : 'Manual'}
                     </div>
                   </div>
                 </div>
@@ -2141,7 +2259,7 @@ ${pasteText}`;
                   <div>
                     <span style={{ color: 'var(--mut)' }}>🤖 Origem:</span>
                     <div style={{ fontWeight: 500 }}>
-                      {duplicataComparacao.q2.geradoIA ? 'Gerado por IA' : duplicataComparacao.q2._metodo === 'parser-local' ? 'Parser Local' : 'Manual'}
+                      {duplicataComparacao.q2.geradoIA ? 'Gerado por IA' : 'Manual'}
                     </div>
                   </div>
                 </div>

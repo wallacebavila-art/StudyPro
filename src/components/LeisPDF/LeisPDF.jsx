@@ -72,27 +72,25 @@ const LeisPDF = () => {
 
     try {
       let questoes;
+      const options = {
+        disciplina,
+        topico,
+        dificuldade,
+        quantidade,
+        model: config.geminiModel
+      };
+      
       if (modoEntrada === 'pdf' && selectedFile) {
         questoes = await geminiService.generateFGVQuestionsFromPDF(
           selectedFile,
           config.geminiKey,
-          {
-            disciplina,
-            topico,
-            dificuldade,
-            quantidade
-          }
+          options
         );
       } else {
         questoes = await geminiService.generateFGVQuestionsFromText(
           textoLei,
           config.geminiKey,
-          {
-            disciplina,
-            topico,
-            dificuldade,
-            quantidade
-          }
+          options
         );
       }
 

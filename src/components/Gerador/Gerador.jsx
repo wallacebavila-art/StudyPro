@@ -97,7 +97,7 @@ Gere ${quantidade} questão(ões) no formato JSON acima. Retorne APENAS o array 
 
     try {
       const prompt = gerarPrompt();
-      const response = await geminiService.callGemini(prompt, config.geminiKey, 8192);
+      const response = await geminiService.callGemini(prompt, config.geminiKey, 8192, config.geminiModel);
 
       // Parse JSON
       let questoes;

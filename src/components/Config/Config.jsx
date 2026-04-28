@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStudy } from '../../context/StudyContext';
+import { GEMINI_MODELS } from '../../services/geminiService';
 
 const FONTS = [
   { name: 'Nunito', label: 'Nunito (Padrão)', family: "'Nunito', sans-serif" },
@@ -41,18 +42,29 @@ const Config = () => {
   const [selectedFont, setSelectedFont] = useState(() => {
     return localStorage.getItem('studypro_font') || 'Nunito';
   });
+  const [selectedModel, setSelectedModel] = useState(() => {
+    return config?.geminiModel || localStorage.getItem('geminiModel') || 'gemini-2.5-flash';
+  });
 
   useEffect(() => {
     if (config?.geminiKey !== undefined) {
       setApiKey(config.geminiKey);
     }
+    if (config?.geminiModel !== undefined) {
+      setSelectedModel(config.geminiModel);
+    }
   }, [config]);
 
   const handleSaveApiKey = () => {
     localStorage.setItem('gemini_key', apiKey);
-    updateConfig({ geminiKey: apiKey });
-    setSaveStatus('✅ Gemini salvo!');
+    updateConfig({ geminiKey: apiKey, geminiModel: selectedModel });
+    setSaveStatus('✅ Configurações salvas!');
     setTimeout(() => setSaveStatus(''), 2000);
+  };
+
+  const handleModelChange = (model) => {
+    setSelectedModel(model);
+    localStorage.setItem('geminiModel', model);
   };
 
   useEffect(() => {
@@ -105,6 +117,25 @@ const Config = () => {
             </button>
           </div>
         </div>
+        
+        <div className="fg mt16">
+          <label className="flbl">🤖 Modelo Gemini</label>
+          <select
+            className="fsel"
+            value={selectedModel}
+            onChange={(e) => handleModelChange(e.target.value)}
+          >
+            {Object.entries(GEMINI_MODELS).map(([key, model]) => (
+              <option key={key} value={key}>
+                {model.name} — {model.description}
+              </option>
+            ))}
+          </select>
+          <p className="note" style={{ marginTop: '8px', fontSize: '12px' }}>
+            💡 O modelo afeta a velocidade, qualidade e custo das gerações
+          </p>
+        </div>
+        
         <div className="flex ac gap12 mt16">
           <button className="btn btn-pri" onClick={handleSaveApiKey}>💾 Salvar</button>
           <span style={{ fontSize: '13px' }}>{saveStatus}</span>

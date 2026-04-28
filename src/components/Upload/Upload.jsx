@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useStudy } from '../../context/StudyContext';
 import { DISCIPLINAS, getTopicos } from '../../config/editalConfig';
 import { geminiService } from '../../services/geminiService';
+import { pdfParserService } from '../../services/pdfParserService';
 
 const Upload = () => {
   const { addQuestion, config, setView, questions: existingQuestions } = useStudy();
@@ -18,6 +19,19 @@ const Upload = () => {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [compareData, setCompareData] = useState(null);
   const [showSaveSummary, setShowSaveSummary] = useState(false);
+  
+  // Estado para modo de extração
+  const [extractionMode, setExtractionMode] = useState('local'); // 'local' | 'gemini' | 'paste'
+  
+  // Estado para modo colar texto
+  const [pasteText, setPasteText] = useState('');
+  const [showPasteArea, setShowPasteArea] = useState(false);
+  
+  // Estado para relatório de extração
+  const [extractionReport, setExtractionReport] = useState(null);
+  
+  // Estado para modo preciso (análise profunda)
+  const [preciseMode, setPreciseMode] = useState(false);
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
@@ -25,16 +39,91 @@ const Upload = () => {
       setSelectedFile(file);
       setQuestions([]);
       setStatus('');
+      setExtractionReport(null);
     } else {
       setStatus('Por favor, selecione um arquivo PDF válido.');
     }
   };
 
+  // Processar texto colado (modo paste)
+  const processPasteText = async () => {
+    if (!pasteText.trim()) {
+      setStatus('Por favor, cole o texto das questões primeiro.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setProgress({ stage: 'Analisando texto colado...', percent: 30 });
+    setExtractionReport(null);
+
+    try {
+      // Usar o parser de questões com relatório (modo preciso se ativado)
+      console.log(`🐌 [Upload] Modo Preciso: ${preciseMode ? 'ATIVADO' : 'desativado'}`);
+      const { questoes: extracted, report } = pdfParserService.parseQuestoesFromTextWithReport(pasteText, preciseMode);
+      
+      // Salvar relatório
+      setExtractionReport(report);
+      
+      // Mostrar alerta se houver problemas significativos
+      if (report?.alerta && report.ignorados > 5) {
+        window.alert(report.alerta);
+      }
+      
+      setProgress({ stage: 'Processando questões...', percent: 80 });
+      
+      if (extracted.length === 0) {
+        setStatus('❌ Nenhuma questão encontrada no texto colado. Verifique se o formato está correto (deve ter número, enunciado, alternativas a-e).');
+        setIsProcessing(false);
+        setProgress({ stage: '', percent: 0 });
+        return;
+      }
+        
+      // Adicionar alerta para questões sem classificação
+      const questionsWithAlert = extracted.map(q => ({
+        ...q,
+        _alerta: (!q.disciplina && !q.topico) ? '⚠️ QUESTÃO SEM CLASSIFICAÇÃO: Não foi possível associar esta questão a nenhuma disciplina ou tópico do edital. Requer revisão manual.' : ''
+      }));
+      
+      setQuestions(questionsWithAlert);
+      
+      // Detectar duplicatas
+      const dupInfo = detectDuplicates(questionsWithAlert);
+      const dupCount = Object.keys(dupInfo).length;
+      
+      // Status com informação do relatório
+      let statusMsg = `${questionsWithAlert.length} questões extraídas do texto!`;
+      if (report?.ignorados > 0) {
+        statusMsg += ` (${report.ignorados} ignoradas - veja detalhes abaixo)`;
+      }
+      if (dupCount > 0) {
+        statusMsg += ` (${dupCount} possível${dupCount > 1 ? 's' : ''} duplicata${dupCount > 1 ? 's' : ''})`;
+      }
+      setStatus(statusMsg);
+      
+      // Limpar área de colar
+      setPasteText('');
+      setShowPasteArea(false);
+    } catch (error) {
+      console.error('Erro:', error);
+      setStatus('Erro ao processar texto: ' + error.message);
+    } finally {
+      setIsProcessing(false);
+      setProgress({ stage: '', percent: 0 });
+    }
+  };
+
   const processPDF = async () => {
+    if (extractionMode === 'paste') {
+      // Modo colar texto
+      await processPasteText();
+      return;
+    }
+    
     if (!selectedFile) return;
     
-    if (!config?.geminiKey) {
-      setStatus('API Key do Gemini não configurada. Configure em Ajustes.');
+    // Verificar API Key apenas se for modo Gemini
+    if (extractionMode === 'gemini' && !config?.geminiKey) {
+      setStatus('API Key do Gemini não configurada. Configure em Ajustes ou use o modo Colar Texto.');
       return;
     }
 
@@ -42,8 +131,24 @@ const Upload = () => {
     setProgress({ stage: 'Iniciando...', percent: 10 });
 
     try {
-      setProgress({ stage: 'Extraindo com Gemini IA...', percent: 30 });
-      const extracted = await geminiService.extractQuestionsFromPDF(selectedFile, config.geminiKey);
+      let extracted = [];
+      
+      if (extractionMode === 'local') {
+        // Usar parser local (sem Gemini)
+        setProgress({ stage: 'Extraindo texto do PDF...', percent: 20 });
+        extracted = await pdfParserService.extractAndParsePDF(selectedFile);
+        
+        if (extracted.length === 0) {
+          setStatus('Nenhuma questão encontrada com o Parser Local. Tente usar o modo Colar Texto ou Gemini para PDFs mais complexos.');
+          setIsProcessing(false);
+          setProgress({ stage: '', percent: 0 });
+          return;
+        }
+      } else {
+        // Usar Gemini
+        setProgress({ stage: 'Extraindo com Gemini IA...', percent: 30 });
+        extracted = await geminiService.extractQuestionsFromPDF(selectedFile, config.geminiKey, config.geminiModel);
+      }
       
       setProgress({ stage: 'Processando questões...', percent: 80 });
         
@@ -59,10 +164,25 @@ const Upload = () => {
         const dupInfo = detectDuplicates(questionsWithAlert);
         const dupCount = Object.keys(dupInfo).length;
         
-        setStatus(`${questionsWithAlert.length} questões extraídas! ${dupCount > 0 ? `(${dupCount} possível${dupCount > 1 ? 's' : ''} duplicata${dupCount > 1 ? 's' : ''} detectada${dupCount > 1 ? 's' : ''})` : ''}`);
+        const modoTexto = extractionMode === 'local' ? ' (Parser Local)' : ' (Gemini IA)';
+        setStatus(`${questionsWithAlert.length} questões extraídas${modoTexto}! ${dupCount > 0 ? `(${dupCount} possível${dupCount > 1 ? 's' : ''} duplicata${dupCount > 1 ? 's' : ''} detectada${dupCount > 1 ? 's' : ''})` : ''}`);
     } catch (error) {
       console.error('Erro:', error);
-      setStatus('Erro ao processar PDF: ' + error.message);
+      
+      const errorMsg = error?.message || error?.toString() || '';
+      
+      // Verificar se é erro de PDF comprimido/binário
+      if (errorMsg.includes('PDF_COMPRIMIDO') || 
+          errorMsg.includes('comprimido') ||
+          errorMsg.includes('binário') ||
+          errorMsg.includes('Não foi possível extrair texto legível')) {
+        
+        window.alert('⚠️ ATENÇÃO: Parser Local não conseguiu ler este PDF!\n\nEste PDF está comprimido, criptografado ou é uma imagem escaneada.\n\n💡 SOLUÇÃO: Converta o PDF para texto (Abra no Adobe Reader, selecione tudo Ctrl+A, copie Ctrl+C) e use o modo "📋 Colar Texto", ou use o modo "🤖 Gemini IA (API)".');
+        
+        setStatus('⚠️ Parser Local falhou. 💡 Use o modo "📋 Colar Texto" (copie o texto do PDF) ou "🤖 Gemini IA (API)".');
+      } else {
+        setStatus('Erro ao processar PDF: ' + errorMsg);
+      }
     } finally {
       setIsProcessing(false);
       setProgress({ stage: '', percent: 0 });
@@ -314,14 +434,132 @@ const Upload = () => {
           )}
         </div>
 
-        {selectedFile && questions.length === 0 && !isProcessing && (
+        {/* Seletor de modo de extração - sempre visível */}
+        {questions.length === 0 && !isProcessing && (
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--mut)' }}>
+              🛠️ Modo de Extração
+            </label>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                className={`btn ${extractionMode === 'local' ? 'btn-pri' : 'btn-sec'}`}
+                onClick={() => { setExtractionMode('local'); setShowPasteArea(false); setExtractionReport(null); }}
+                style={{ flex: 1, padding: '10px', fontSize: '12px', minWidth: '120px' }}
+              >
+                ⚡ Parser Local
+              </button>
+              <button
+                className={`btn ${extractionMode === 'paste' ? 'btn-pri' : 'btn-sec'}`}
+                onClick={() => { setExtractionMode('paste'); setShowPasteArea(true); setExtractionReport(null); }}
+                style={{ flex: 1, padding: '10px', fontSize: '12px', minWidth: '120px' }}
+              >
+                📋 Colar Texto
+              </button>
+              <button
+                className={`btn ${extractionMode === 'gemini' ? 'btn-pri' : 'btn-sec'}`}
+                onClick={() => { setExtractionMode('gemini'); setShowPasteArea(false); setExtractionReport(null); }}
+                style={{ flex: 1, padding: '10px', fontSize: '12px', minWidth: '120px' }}
+                disabled={!config?.geminiKey}
+                title={!config?.geminiKey ? 'Configure a API Key do Gemini primeiro' : ''}
+              >
+                🤖 Gemini IA
+              </button>
+            </div>
+            {/* Toggle Modo Preciso */}
+            {extractionMode === 'paste' && (
+              <div style={{ 
+                marginTop: '12px',
+                padding: '10px',
+                background: 'var(--surf1)',
+                borderRadius: '6px',
+                border: '1px solid var(--surf3)'
+              }}>
+                <label style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '10px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={preciseMode}
+                    onChange={(e) => setPreciseMode(e.target.checked)}
+                  />
+                  <span>
+                    <strong>🐌 Modo Preciso</strong> - Análise profunda (mais lento, mais preciso)
+                  </span>
+                </label>
+                <p style={{ 
+                  marginTop: '6px', 
+                  marginLeft: '26px',
+                  fontSize: '11px', 
+                  color: 'var(--mut)'
+                }}>
+                  Ative para PDFs com formatos irregulares. O parser vai analisar cada questão em detalhe.
+                </p>
+              </div>
+            )}
+            
+            <p style={{ marginTop: '8px', fontSize: '11px', color: 'var(--mut)' }}>
+              {extractionMode === 'local' 
+                ? '💡 Parser Local: Lê o PDF diretamente. Pode falhar em PDFs comprimidos.' 
+                : extractionMode === 'paste'
+                ? `💡 Colar Texto: ${preciseMode ? 'Modo Preciso ATIVO - análise profunda de cada questão.' : 'Modo rápido - bom para formatos padrão.'}`
+                : '💡 Gemini IA: Usa inteligência artificial. Melhor para PDFs complexos ou escaneados.'}
+            </p>
+          </div>
+        )}
+
+        {/* Área de colar texto */}
+        {extractionMode === 'paste' && questions.length === 0 && !isProcessing && (
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: 'var(--mut)' }}>
+              📋 Cole o texto das questões aqui:
+            </label>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder={`Cole o texto do PDF aqui...
+
+Exemplo de formato aceito:
+1. [Q123456] Enunciado da questão aqui...
+a ) Alternativa A
+b ) Alternativa B
+c ) Alternativa C
+d ) Alternativa D
+e ) Alternativa E
+Disciplinas/Assuntos: Tecnologia da Informação > LGPD
+Fonte: FGV 2026 / TJ-RJ / Analista...`}
+              style={{
+                width: '100%',
+                minHeight: '300px',
+                padding: '12px',
+                fontSize: '13px',
+                fontFamily: 'monospace',
+                background: 'var(--surf1)',
+                border: '1px solid var(--surf3)',
+                borderRadius: '6px',
+                color: 'var(--text)',
+                resize: 'vertical'
+              }}
+            />
+            <p style={{ marginTop: '8px', fontSize: '11px', color: 'var(--mut)' }}>
+              💡 <strong>Como usar:</strong> Abra o PDF no Adobe Reader ou navegador, selecione tudo (Ctrl+A), copie (Ctrl+C) e cole aqui (Ctrl+V).
+            </p>
+          </div>
+        )}
+
+        {(selectedFile || (extractionMode === 'paste' && pasteText.trim())) && questions.length === 0 && !isProcessing && (
           <button
             className="btn btn-pri"
             onClick={processPDF}
             disabled={isProcessing}
             style={{ width: '100%', padding: '14px' }}
           >
-            🚀 Iniciar Extração via Gemini IA
+            {extractionMode === 'local' && '⚡ Iniciar Extração com Parser Local'}
+            {extractionMode === 'paste' && '📋 Processar Texto Colado'}
+            {extractionMode === 'gemini' && '🚀 Iniciar Extração via Gemini IA'}
           </button>
         )}
 
@@ -351,8 +589,102 @@ const Upload = () => {
         )}
 
         {status && (
-          <div className={`note ${status.includes('Erro') ? 'err' : 'ok'} mt16`}>
+          <div className={`note ${typeof status === 'string' && status.includes('Erro') ? 'err' : 'ok'} mt16`}>
             {status}
+          </div>
+        )}
+
+        {/* Caixa de relatório de extração */}
+        {extractionReport?.alerta && (
+          <div className="note warn mt16" style={{ 
+            border: '2px solid var(--warn)', 
+            background: 'var(--warn-bg, rgba(255,193,7,0.1))',
+            padding: '16px'
+          }}>
+            <div style={{ 
+              fontWeight: 'bold', 
+              marginBottom: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span style={{ fontSize: '20px' }}>⚠️</span>
+              <span>Relatório de Extração</span>
+            </div>
+            <div style={{ 
+              fontSize: '13px', 
+              lineHeight: '1.6',
+              whiteSpace: 'pre-line'
+            }}>
+              {extractionReport.alerta}
+            </div>
+            <div style={{ 
+              marginTop: '12px',
+              padding: '10px',
+              background: 'var(--surf1)',
+              borderRadius: '4px',
+              fontSize: '12px'
+            }}>
+              {preciseMode && (
+                <div style={{ 
+                  marginBottom: '8px',
+                  padding: '4px 8px',
+                  background: 'rgba(0,150,0,0.1)',
+                  borderRadius: '4px',
+                  color: '#090',
+                  fontSize: '11px'
+                }}>
+                  🐌 <strong>Modo Preciso</strong> - Análise profunda ativada
+                </div>
+              )}
+              <strong>📊 Resumo:</strong><br/>
+              • Total encontrado: {extractionReport.totalEncontrados} questões<br/>
+              • Extraídas com sucesso: {extractionReport.extraidos} questões<br/>
+              • Ignoradas: {extractionReport.ignorados} questões<br/>
+              • Sem alternativas: {extractionReport.motivos.semAlternativas}<br/>
+              • Muito pequenas: {extractionReport.motivos.pequenos}
+            </div>
+            
+            {/* Lista detalhada de questões ignoradas */}
+            {extractionReport.questoesIgnoradas?.length > 0 && (
+              <div style={{ 
+                marginTop: '16px',
+                padding: '12px',
+                background: 'var(--surf1)',
+                borderRadius: '6px',
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '10px', fontSize: '13px' }}>
+                  📋 Lista de questões não extraídas:
+                </div>
+                {extractionReport.questoesIgnoradas.map((q, idx) => (
+                  <div 
+                    key={idx}
+                    style={{ 
+                      padding: '8px 10px',
+                      marginBottom: '6px',
+                      background: 'var(--surf2)',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      borderLeft: '3px solid var(--err)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <strong>Questão {q.numero}</strong>
+                      {q.id && <span style={{ color: 'var(--mut)' }}>ID: {q.id}</span>}
+                      <span style={{ color: 'var(--warn)' }}>Pág. ~{q.pagina}</span>
+                    </div>
+                    <div style={{ marginTop: '4px', color: 'var(--err)', fontSize: '11px' }}>
+                      ❌ {q.motivo}
+                    </div>
+                    <div style={{ marginTop: '4px', color: 'var(--mut)', fontSize: '11px', fontStyle: 'italic' }}>
+                      "{q.amostra}..."
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

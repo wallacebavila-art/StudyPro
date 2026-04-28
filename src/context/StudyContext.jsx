@@ -8,7 +8,8 @@ const initialState = {
   questions: {},
   simulados: {},
   config: { 
-    geminiKey: localStorage.getItem('geminiKey') || ''
+    geminiKey: localStorage.getItem('geminiKey') || '',
+    geminiModel: localStorage.getItem('geminiModel') || 'gemini-2.5-flash'
   },
   flashcards_custom: {},
   fc_progress: {},
@@ -52,7 +53,8 @@ export const StudyProvider = ({ children }) => {
         // Mergear config do Firebase com API keys do localStorage
         const mergedConfig = {
           ...config,
-          geminiKey: config?.geminiKey || localStorage.getItem('gemini_key') || ''
+          geminiKey: config?.geminiKey || localStorage.getItem('gemini_key') || '',
+          geminiModel: config?.geminiModel || localStorage.getItem('geminiModel') || 'gemini-2.5-flash'
         };
 
         dispatch({

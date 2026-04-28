@@ -2,9 +2,18 @@
 // Em DEV usa proxy, em produção usa URL direta
 import { criarHistorico } from '../utils/dateUtils';
 
-const API_URL = import.meta.env.DEV 
-  ? '/api/gemini/v1beta/models/gemini-2.5-flash:generateContent'
-  : 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+// Modelos Gemini disponíveis
+export const GEMINI_MODELS = {
+  'gemini-2.5-flash': { name: 'Gemini 2.5 Flash', description: 'Rápido e eficiente (padrão)' }
+};
+
+// Função para obter URL da API baseada no modelo
+const getApiUrl = (model = 'gemini-2.5-flash') => {
+  const baseUrl = import.meta.env.DEV 
+    ? '/api/gemini/v1beta/models/'
+    : 'https://generativelanguage.googleapis.com/v1beta/models/';
+  return `${baseUrl}${model}:generateContent`;
+};
 
 // Converter arquivo para base64 - igual ao HTML
 function fileToBase64(file) {
@@ -52,7 +61,7 @@ function tryParseJSON(text) {
 
 export const geminiService = {
   // Extrair questões de PDF - exatamente igual ao HTML
-  async extractQuestionsFromPDF(file, apiKey) {
+  async extractQuestionsFromPDF(file, apiKey, model = 'gemini-2.5-flash') {
     if (!apiKey) {
       throw new Error('Configure a API Key do Gemini em Configurações');
     }
@@ -62,7 +71,7 @@ export const geminiService = {
     console.log('🔷 [GEMINI] INICIANDO EXTRAÇÃO DE PDF');
     console.log('🔷 [GEMINI] ═══════════════════════════════════════════');
     console.log('📄 Arquivo:', file.name, `(${(file.size / 1024).toFixed(1)} KB)`);
-    console.log('🤖 Modelo: gemini-2.5-flash');
+    console.log('🤖 Modelo:', model);
     console.log('⏱️  Início:', new Date().toLocaleTimeString());
     
     // Converter para base64
@@ -251,13 +260,14 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
       ]
     };
 
-    console.log('� [2/5] Enviando requisição para Gemini...');
-    console.log('   URL:', API_URL.replace(apiKey, '***KEY***'));
+    const apiUrl = getApiUrl(model);
+    console.log(' [2/5] Enviando requisição para Gemini...');
+    console.log('   URL:', apiUrl.replace(apiKey, '***KEY***'));
     console.log('   Max tokens:', requestBody.generationConfig.maxOutputTokens.toLocaleString());
     console.log('   Temperature:', requestBody.generationConfig.temperature);
     
     const reqStart = Date.now();
-    const resp = await fetch(`${API_URL}?key=${apiKey}`, {
+    const resp = await fetch(`${apiUrl}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
@@ -368,7 +378,7 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
   },
 
   // Chamar Gemini com texto - igual ao HTML
-  async callGemini(prompt, apiKey, maxTokens = 4096) {
+  async callGemini(prompt, apiKey, maxTokens = 4096, model = 'gemini-2.5-flash') {
     if (!apiKey) {
       throw new Error('Configure a API Key do Gemini em Configurações');
     }
@@ -376,16 +386,18 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
     console.log('🔷 [GEMINI] callGemini - Iniciando...');
     console.log('📝 Prompt:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
     console.log('⚙️ maxTokens:', maxTokens);
+    console.log('🤖 Modelo:', model);
 
     const requestBody = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens }
     };
 
+    const apiUrl = getApiUrl(model);
     console.log('📤 [GEMINI] Enviando requisição...');
-    console.log('🔗 URL:', API_URL.replace(apiKey, '***KEY***'));
+    console.log('🔗 URL:', apiUrl.replace(apiKey, '***KEY***'));
 
-    const resp = await fetch(`${API_URL}?key=${apiKey}`, {
+    const resp = await fetch(`${apiUrl}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
@@ -432,7 +444,8 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
     console.log('⏱️  Início:', new Date().toLocaleTimeString());
 
     const prompt = this.buildFGVPrompt(options, textoLei);
-    return this.executeFGVGeneration(prompt, apiKey, options, startTime);
+    const model = options.model || 'gemini-2.5-flash';
+    return this.executeFGVGeneration(prompt, apiKey, options, startTime, model);
   },
 
   // Gerar questões estilo FGV a partir de PDF
@@ -461,6 +474,7 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
     console.log('   Tamanho:', (b64.length / 1024).toFixed(1), 'KB');
 
     const prompt = this.buildFGVPrompt(options, null);
+    const model = options.model || 'gemini-2.5-flash';
 
     const requestBody = {
       contents: [{ 
@@ -483,12 +497,14 @@ Retorne SOMENTE o array JSON, sem formatação markdown. Comece imediatamente co
       ]
     };
 
-    console.log('� [2/4] Enviando requisição para Gemini...');
+    const apiUrl = getApiUrl(model);
+    console.log(' [2/4] Enviando requisição para Gemini...');
+    console.log('   Modelo:', model);
     console.log('   Max tokens:', requestBody.generationConfig.maxOutputTokens.toLocaleString());
     console.log('   Temperature:', requestBody.generationConfig.temperature);
 
     const reqStart = Date.now();
-    const resp = await fetch(`${API_URL}?key=${apiKey}`, {
+    const resp = await fetch(`${apiUrl}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
@@ -615,7 +631,7 @@ REGRAS ADICIONAIS:
   },
 
   // Executar geração FGV para texto
-  async executeFGVGeneration(prompt, apiKey, options, startTime) {
+  async executeFGVGeneration(prompt, apiKey, options, startTime, model = 'gemini-2.5-flash') {
     const requestBody = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { 
@@ -632,12 +648,14 @@ REGRAS ADICIONAIS:
       ]
     };
 
-    console.log('� [2/3] Enviando requisição FGV texto...');
+    const apiUrl = getApiUrl(model);
+    console.log(' [2/3] Enviando requisição FGV texto...');
+    console.log('   Modelo:', model);
     console.log('   Max tokens:', requestBody.generationConfig.maxOutputTokens.toLocaleString());
     console.log('   Temperature:', requestBody.generationConfig.temperature);
 
     const reqStart = Date.now();
-    const resp = await fetch(`${API_URL}?key=${apiKey}`, {
+    const resp = await fetch(`${apiUrl}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
